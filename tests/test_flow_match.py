@@ -359,3 +359,33 @@ async def test_stats_and_leaderboard(ctx):
     t_done = await ctx.tournaments.get(t.id)
     prof = await ctx.stats.profile(t_done.champion_id)
     assert prof.matches == 2 and prof.games_won >= 2 and prof.top_picks
+
+
+async def test_backup_and_file_db_concurrency(tmp_path):
+    import asyncio
+
+    from aniimo_pvp.db.database import Database, backup_database
+    from aniimo_pvp.db.models import Player
+
+    path = str(tmp_path / "a.db")
+    db = Database(path)
+    await db.create_all()
+
+    async def writer(i):
+        async with db.transaction() as s:
+            s.add(Player(discord_id=i, aniimo_uid=str(i), display_name=f"p{i}"))
+            await asyncio.sleep(0.01)
+
+    async def reader():
+        async with db.session() as s:
+            await s.get(Player, 1)
+
+    await asyncio.gather(*[writer(i) for i in range(1, 30)], *[reader() for _ in range(30)])
+    async with db.session() as s:
+        assert len(list(await s.scalars(select(Player)))) == 29
+    await db.dispose()
+    dest = backup_database(path, str(tmp_path / "backups"), keep=2)
+    assert dest and dest.stat().st_size > 0
+    for _ in range(3):
+        backup_database(path, str(tmp_path / "backups"), keep=2)
+    assert len(list((tmp_path / "backups").glob("*.db"))) <= 2

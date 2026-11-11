@@ -1,0 +1,48 @@
+# Aniimo draft bot settings. Copy to config.yaml (or run: aniimo-pvp init) and fill in the IDs.
+# To copy IDs: Discord > Settings > Advanced > Developer Mode ON, then right-click a server/channel/role > Copy ID.
+
+guild_id: 0            # your server ID
+admin_role_id: 0       # role that can run the tournament (create, start, /admin tools)
+
+channels:
+  admin: 0             # admins only: setup panel, CSV paste, alerts, "Start Round N"
+  announce: 0          # bracket images, round tables, champion
+  matches: 0           # the bot creates one private thread per match here
+  live_draft: 0        # optional (0 = off): live draft boards for spectators
+
+timers:
+  draft_step_seconds: 45        # time per ban/pick; timeout = ban skipped / random pick
+  side_choice_seconds: 120      # no answer = Side A
+  noshow_reminder_minutes: 10   # ping players who haven't clicked Ready
+  noshow_escalate_minutes: 15   # then admins decide (give win / extend / DQ both)
+  noshow_extend_minutes: 10
+  auto_confirm_minutes: 10      # a reported result is accepted if nobody disputes
+  rematch_offer_seconds: 120
+  thread_archive_minutes: 10    # after a match ends
+
+# Test mode: allows players who aren't server members (any numeric ID in the CSV),
+# and lets admins click buttons on their behalf. Turn OFF for real tournaments.
+dev_mode: false
+
+# Upload Aniimo thumbnails as the bot's own emojis so menus show icons (recommended).
+upload_emojis: true
+
+# Optional: change the draft order. Default (two-phase split, 2 bans + 4 picks each):
+# draft_order:
+#   - [A, ban]
+#   - [B, ban]
+#   - [A, pick]
+#   - [B, pick]
+#   - [B, pick]
+#   - [A, pick]
+#   - [B, ban]
+#   - [A, ban]
+#   - [B, pick]
+#   - [A, pick]
+#   - [A, pick]
+#   - [B, pick]
+
+paths:
+  database: data/aniimo.db
+  roster_csv: data/roster.csv
+  images_dir: assets/aniimo

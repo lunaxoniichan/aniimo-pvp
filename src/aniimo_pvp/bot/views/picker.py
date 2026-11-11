@@ -229,4 +229,7 @@ class SearchModal(discord.ui.Modal, title="Search Aniimo"):
 async def open_picker(bot: AniimoBot, interaction: discord.Interaction, opts: TurnOptions) -> None:
     view = PickerView(bot, opts)
     embed, files = view.render()
-    await interaction.response.send_message(embed=embed, view=view, files=files, ephemeral=True)
+    if files:
+        await interaction.response.send_message(embed=embed, view=view, files=files, ephemeral=True)
+    else:
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

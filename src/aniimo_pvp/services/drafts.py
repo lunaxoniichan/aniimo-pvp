@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
-from ..db.models import DraftActionRow, Game, Match
+from ..db.models import DraftActionRow, Game, Job, Match
 from ..domain.draft import DraftState, IllegalAction
 from ..domain.roster import Aniimo
 from ..domain.states import GameStatus, MatchState
@@ -94,7 +94,12 @@ class DraftService:
             locked = await fearless_locked(s, m, game, player)
             slugs = set(state.available(self.ctx.roster.slugs, locked))
             available = [a for a in self.ctx.roster.items if a.slug in slugs]
-            return TurnOptions(m.id, game.id, step, side, kind, player, available, locked, state, game.step_deadline)
+            due = await s.scalar(
+                select(Job.due_at).where(Job.kind == JOB_DRAFT_STEP, Job.ref_id == game.id, Job.status == "pending")
+            )
+            return TurnOptions(
+                m.id, game.id, step, side, kind, player, available, locked, state, due or game.step_deadline
+            )
 
     async def submit(self, match_id: int, game_id: int, step: int, actor_id: int, slug: str) -> None:
         async def fn(s: AsyncSession, m: Match, out: Outbox):

@@ -19,6 +19,22 @@ manual checklist ticked on the test server · docs updated · committed + pushed
 that aren't server members, lets admins act for any player, and shortens all
 timers, so one person with two accounts can test a whole tournament.
 
+## Status (handover)
+
+All phases P1–P8 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified without Discord:
+
+| Area | How it was verified |
+|---|---|
+| Rules: formats, bracket and byes (2–128 players), draft order, legality, Fearless, series, ELO, CSV, roster | Unit tests, including 1,000 random drafts that never produce an illegal pick |
+| Services: full tournaments (2, 4, 7, 128 players), rematch vs next game, disputes, timeouts, no-shows, DQ/forfeits, swaps, cancel, stats | Flow tests with a fake clock |
+| Restart safety | Timers that were due while offline restart with full time; the turn deadline follows the restarted timer |
+| Rendering | Board in every state + bracket at 7 and 128 players, checked by eye against the approved mockups |
+| Discord layer | Whole tournaments driven through the real notifier and button handlers with fake Discord objects; every slash command payload validated offline |
+| Packaging | Fresh clone → install → `init` → `check` → `preview` → test suite |
+
+Still needs the live server (your token and IDs): run P0, then the manual checks below on a test
+server. Dev mode lets one admin play both sides of a match.
+
 ---
 
 ## P0 · Discord setup (you, ~15 min)

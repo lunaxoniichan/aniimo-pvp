@@ -128,9 +128,10 @@ def load_roster(csv_path: str | Path, images_dir: str | Path) -> tuple[Roster, l
         items: list[Aniimo] = []
         seen: dict[str, int] = {}
         for line_no, raw in enumerate(reader, start=2):
-            row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
-            if not any(row.values()) or row.get("name", "").startswith("#"):
-                continue
+            row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items() if k is not None}
+            first = next(iter(row.values()), "")
+            if not any(row.values()) or first.startswith("#") or row.get("name", "").startswith("#"):
+                continue  # blank line or comment
             name = row.get("name", "")
             if not name:
                 raise RosterError(f"{csv_path}:{line_no}: name is empty")

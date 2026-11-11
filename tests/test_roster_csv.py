@@ -92,3 +92,11 @@ def test_players_csv_issues():
 def test_players_csv_column_order_from_header():
     rows, issues = parse_players_csv("name,uid,discord\nLuna,100234567,412806339218145281\n")
     assert not issues and rows[0].discord_id == 412806339218145281 and rows[0].display_name == "Luna"
+
+
+def test_example_roster_loads_and_comments_are_skipped():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    roster, warnings = load_roster(root / "data" / "roster.example.csv", root / "assets" / "aniimo")
+    assert len(roster) == 18 and len(roster.elements()) == 9 and not warnings

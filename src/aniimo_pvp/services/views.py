@@ -127,7 +127,8 @@ class MatchView:
 
     @property
     def step_deadline(self) -> datetime | None:
-        return self.game.step_deadline if self.game else None
+        # the pending timer is the source of truth (it is reset after a restart)
+        return self.due.get("draft_step") or (self.game.step_deadline if self.game else None)
 
     @property
     def replay_of_number(self) -> bool:

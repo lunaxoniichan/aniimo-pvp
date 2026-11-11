@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -26,13 +26,25 @@ class Database:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             self.engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
 
+        file_db = path != ":memory:"
+
         @event.listens_for(self.engine.sync_engine, "connect")
         def _pragmas(dbapi_conn, _record):  # pragma: no cover - trivial
+            if file_db:
+                dbapi_conn.isolation_level = None  # we emit BEGIN ourselves (see _begin)
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
-            if path != ":memory:":
+            if file_db:
                 cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA busy_timeout=10000")
             cur.close()
+
+        if file_db:
+
+            @event.listens_for(self.engine.sync_engine, "begin")
+            def _begin(conn):  # pragma: no cover - trivial
+                # take the write lock up front: concurrent writers wait instead of failing on a stale snapshot
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
 
         self.sessionmaker = async_sessionmaker(self.engine, expire_on_commit=False)
 
@@ -61,7 +73,10 @@ def backup_database(db_path: str, backups_dir: str, keep: int = 10) -> Path | No
     dest_dir = Path(backups_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"aniimo-{datetime.now():%Y%m%d-%H%M%S}.db"
-    shutil.copy2(src, dest)
+    with sqlite3.connect(src) as source, sqlite3.connect(dest) as target:
+        source.backup(target)  # consistent copy even with a WAL file
+    source.close()
+    target.close()
     backups = sorted(dest_dir.glob("aniimo-*.db"))
     for old in backups[:-keep]:
         old.unlink(missing_ok=True)
