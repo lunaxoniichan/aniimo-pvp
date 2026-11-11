@@ -49,7 +49,11 @@ async def test_design_example_bo3_with_same_teams_rematch(ctx):
     await play_game(ctx, m.id, luna)
     gs = await games(ctx, m.id)
     assert [(g.number, g.attempt, g.status) for g in gs] == [
-        (1, 1, "confirmed"), (2, 1, "voided"), (2, 2, "confirmed"), (3, 1, "confirmed")]
+        (1, 1, "confirmed"),
+        (2, 1, "voided"),
+        (2, 2, "confirmed"),
+        (3, 1, "confirmed"),
+    ]
     assert gs[1].void_reason == "rematch_same_teams"
     final = await ctx.matches.get(m.id)
     assert final.state == "done" and final.winner_id == luna
@@ -243,8 +247,10 @@ async def test_fearless_blocks_own_confirmed_picks_only(make_ctx):
     _, m = await first_match(ctx, 2, fmt="quick", fearless=True, cap=8)  # 2-player Quick final is Bo3
     await play_game(ctx, m.id, m.p1_id)
     async with ctx.db.session() as s:
-        g1_picks = {(r.player_id, r.aniimo_slug) for r in await s.scalars(
-            select(DraftActionRow).where(DraftActionRow.kind == "pick"))}
+        g1_picks = {
+            (r.player_id, r.aniimo_slug)
+            for r in await s.scalars(select(DraftActionRow).where(DraftActionRow.kind == "pick"))
+        }
     await ctx.matches.next_game(m.id, m.p1_id)
     mm = await ctx.matches.get(m.id)
     await ctx.matches.choose_side(m.id, mm.side_chooser_id, "A")
@@ -270,6 +276,7 @@ async def test_dq_player_with_unknown_next_opponent_forfeits_slot(ctx):
     assert final.forfeit_slot is not None
     m1 = await ctx.matches.get(r1[1].id)
     from tests.conftest import play_match
+
     done = await play_match(ctx, m1.id)
     assert ctx.notifier.last("round_complete")["round"] == 1
     await ctx.tournaments.start_next_round(t.id, ADMIN)
@@ -293,6 +300,7 @@ async def test_dq_both_lets_next_opponent_walk_through(ctx):
     a, b = await open_matches(ctx, t.id)
     await ctx.matches.admin_dq_both(a.id, ADMIN)
     from tests.conftest import play_match
+
     done = await play_match(ctx, b.id)
     await ctx.tournaments.start_next_round(t.id, ADMIN)
     final = (await ctx.tournaments.matches(t.id, 2))[0]
@@ -336,6 +344,7 @@ async def test_screenshot_attached_and_call_admin(ctx):
 async def test_stats_and_leaderboard(ctx):
     t = await make_tournament(ctx, 4, fmt="quick", cap=8)
     from tests.conftest import play_match
+
     for m in await open_matches(ctx, t.id):
         await play_match(ctx, m.id)
     await ctx.tournaments.start_next_round(t.id, ADMIN)

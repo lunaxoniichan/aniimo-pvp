@@ -56,13 +56,15 @@ async def lookup_all(discord_id: int) -> str | None:
     return f"P{discord_id % 1000}"
 
 
-async def make_tournament(ctx, n: int, fmt: str = "standard", cap: int = 32, fearless: bool = False,
-                          seed: str = "TEST"):
+async def make_tournament(
+    ctx, n: int, fmt: str = "standard", cap: int = 32, fearless: bool = False, seed: str = "TEST"
+):
     t = await ctx.tournaments.create(GUILD, "Test Cup", ADMIN)
     await ctx.tournaments.set_options(t.id, ADMIN, cap=cap, fmt=fmt, fearless=fearless)
     await ctx.tournaments.to_registration(t.id, ADMIN)
     csv_text = "discord_id,aniimo_uid,display_name\n" + "\n".join(
-        f"{player_id(i)},{200000 + i},P{i}" for i in range(1, n + 1))
+        f"{player_id(i)},{200000 + i},P{i}" for i in range(1, n + 1)
+    )
     preview = await ctx.tournaments.preview_players(t.id, ADMIN, csv_text, lookup_all)
     assert preview.can_confirm, preview.blocking
     await ctx.tournaments.confirm_players(t.id, ADMIN)

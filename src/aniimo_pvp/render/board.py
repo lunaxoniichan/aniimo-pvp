@@ -63,16 +63,20 @@ class BoardRenderer:
         for y in range(y0 + radius, y1 - radius, dash * 2):
             d.line((x0, y, x0, min(y + dash, y1 - radius)), fill=color, width=1)
             d.line((x1, y, x1, min(y + dash, y1 - radius)), fill=color, width=1)
-        for cx, cy, a0 in ((x0 + radius, y0 + radius, 180), (x1 - radius, y0 + radius, 270),
-                           (x1 - radius, y1 - radius, 0), (x0 + radius, y1 - radius, 90)):
+        for cx, cy, a0 in (
+            (x0 + radius, y0 + radius, 180),
+            (x1 - radius, y0 + radius, 270),
+            (x1 - radius, y1 - radius, 0),
+            (x0 + radius, y1 - radius, 90),
+        ):
             d.arc((cx - radius, cy - radius, cx + radius, cy + radius), a0 + 15, a0 + 75, fill=color, width=1)
 
     def text(self, d, xy, s, font, fill, anchor="la", strike=False):
         d.text(xy, s, font=font, fill=fill, anchor=anchor)
         if strike:
-            l, t, r, b = d.textbbox(xy, s, font=font, anchor=anchor)
-            ym = (t + b) / 2 + 1
-            d.line((l, ym, r, ym), fill=fill, width=1)
+            left, top, right, bottom = d.textbbox(xy, s, font=font, anchor=anchor)
+            ym = (top + bottom) / 2 + 1
+            d.line((left, ym, right, ym), fill=fill, width=1)
 
     # ---------- main ----------
     def render(self, v: MatchView) -> bytes:
@@ -168,8 +172,15 @@ class BoardRenderer:
             img.alpha_composite(self.thumbs.get(slot.aniimo, 52, banned=True), (x, y))
             d.line((x + 15, y + 15, x + 37, y + 37), fill=BAN_X, width=4)
             d.line((x + 37, y + 15, x + 15, y + 37), fill=BAN_X, width=4)
-            self.text(d, (x + 62, y + 24), self.fit(slot.aniimo.name, f_txt, width - 64), f_txt, "#B4BAD6",
-                      anchor="ls", strike=True)
+            self.text(
+                d,
+                (x + 62, y + 24),
+                self.fit(slot.aniimo.name, f_txt, width - 64),
+                f_txt,
+                "#B4BAD6",
+                anchor="ls",
+                strike=True,
+            )
             label += " · AUTO" if slot.auto else ""
         elif slot.state == "done":
             self.dashed_circle(d, box, DASH)
@@ -198,8 +209,13 @@ class BoardRenderer:
         if slot.state == "done" and slot.auto:
             pill = (x1 - 16 - 50, y0 + 11, x1 - 16, y0 + 31)
             d.rounded_rectangle(pill, radius=6, fill=SOFT)
-            d.text(((pill[0] + pill[2]) / 2, (pill[1] + pill[3]) / 2), "AUTO", font=self.fonts.inter(11, "bold"),
-                   fill=BG, anchor="mm")
+            d.text(
+                ((pill[0] + pill[2]) / 2, (pill[1] + pill[3]) / 2),
+                "AUTO",
+                font=self.fonts.inter(11, "bold"),
+                fill=BG,
+                anchor="mm",
+            )
         inner_top = y0 + 38
         avail_h = y1 - inner_top - 12
         if slot.state == "done" and slot.aniimo:
@@ -212,8 +228,9 @@ class BoardRenderer:
                 f_name = self.fonts.inter(fs, "bold")
                 if f_name.getlength(slot.aniimo.name) <= max_w:
                     break
-            d.text((tx, ty + size / 2 - 4), self.fit(slot.aniimo.name, f_name, max_w), font=f_name, fill=TEXT,
-                   anchor="ls")
+            d.text(
+                (tx, ty + size / 2 - 4), self.fit(slot.aniimo.name, f_name, max_w), font=f_name, fill=TEXT, anchor="ls"
+            )
             dot_y = ty + size / 2 + 14
             d.ellipse((tx, dot_y - 5, tx + 9, dot_y + 4), fill=slot.aniimo.color)
             d.text((tx + 16, dot_y), slot.aniimo.element, font=self.fonts.inter(13), fill=SOFT, anchor="lm")
@@ -222,8 +239,13 @@ class BoardRenderer:
         elif slot.state == "active":
             who = v.turn_player.name if v.turn_player else ""
             d.text((x0 + 16, inner_top + 18), "Picking…", font=self.fonts.inter(22, "bold"), fill=sc["lt"], anchor="la")
-            d.text((x0 + 16, inner_top + 50), self.fit(f"{who} is choosing", self.fonts.inter(13), x1 - x0 - 32),
-                   font=self.fonts.inter(13), fill=SOFT, anchor="la")
+            d.text(
+                (x0 + 16, inner_top + 50),
+                self.fit(f"{who} is choosing", self.fonts.inter(13), x1 - x0 - 32),
+                font=self.fonts.inter(13),
+                fill=SOFT,
+                anchor="la",
+            )
         else:
             d.text((x0 + 16, inner_top + 18), "Waiting", font=self.fonts.inter(14), fill=FAINT, anchor="la")
 
@@ -233,7 +255,8 @@ class BoardRenderer:
         turn = v.turn
         if turn is None:
             border, fill, name_col = "#3A4170", PANEL, TEXT
-            lines = ("DRAFT COMPLETE", "Good luck!", "Play the game, then report", f"{len(v.order)} of {len(v.order)} steps done")
+            n = len(v.order)
+            lines = ("DRAFT COMPLETE", "Good luck!", "Play the game, then report", f"{n} of {n} steps done")
         else:
             sc = SIDE[turn[0]]
             border, fill, name_col = sc["c"], blend(sc["c"], BG, 0.14), sc["lt"]
@@ -282,13 +305,15 @@ class BoardRenderer:
             num_col = MUTED
         d.text(((dot[0] + dot[2]) / 2, cy), str(st.num), font=f_num, fill=num_col, anchor="mm")
         tag_col = MUTED if st.state == "empty" else sc["lt"]
-        d.text((x0 + 40, cy), f"{st.side} {st.kind.upper()}", font=self.fonts.inter(11, "bold"), fill=tag_col,
-               anchor="lm")
+        d.text(
+            (x0 + 40, cy), f"{st.side} {st.kind.upper()}", font=self.fonts.inter(11, "bold"), fill=tag_col, anchor="lm"
+        )
         f = self.fonts.inter(13, "semibold" if st.state != "empty" else "regular")
         max_w = x1 - (x0 + 98) - 8
         if st.state == "done":
             if st.skipped:
-                txt, col, strike = ("no ban" if st.kind == "ban" else "skipped") + (" · auto" if st.auto else ""), FAINT, False
+                txt = ("no ban" if st.kind == "ban" else "skipped") + (" · auto" if st.auto else "")
+                col, strike = FAINT, False
             else:
                 txt = (st.aniimo.name if st.aniimo else "?") + (" · auto" if st.auto else "")
                 col, strike = (MUTED, True) if st.kind == "ban" else (TEXT, False)
@@ -304,6 +329,11 @@ class BoardRenderer:
         picks = sum(1 for s, k in v.order if s == "A" and k == "pick")
         fear = "Fearless on" if v.tournament.fearless else "Fearless off"
         f = self.fonts.inter(12)
-        d.text((24, H - 18), f"Exclusive picks · {bans} bans + {picks} picks per player · {fear}", font=f,
-               fill="#8C93B5", anchor="lm")
+        d.text(
+            (24, H - 18),
+            f"Exclusive picks · {bans} bans + {picks} picks per player · {fear}",
+            font=f,
+            fill="#8C93B5",
+            anchor="lm",
+        )
         d.text((W - 24, H - 18), "AUTO = time ran out, picked at random", font=f, fill="#8C93B5", anchor="rm")

@@ -100,8 +100,9 @@ class MatchService:
         await self.ctx.scheduler.cancel(s, (JOB_NOSHOW_REMINDER, JOB_NOSHOW_ESCALATE), m.id)
         if m.state == S.NOSHOW:
             transition(m, S.WAITING)
-        game = Game(match_id=m.id, number=1, attempt=1, status=GameStatus.SIDE_CHOICE.value,
-                    created_at=self.ctx.clock.now())
+        game = Game(
+            match_id=m.id, number=1, attempt=1, status=GameStatus.SIDE_CHOICE.value, created_at=self.ctx.clock.now()
+        )
         s.add(game)
         await s.flush()
         coin = self.ctx.rng.choice([m.p1_id, m.p2_id])
@@ -117,6 +118,7 @@ class MatchService:
             if m.state == S.WAITING and not (m.p1_ready and m.p2_ready):
                 missing = [p for p, r in ((m.p1_id, m.p1_ready), (m.p2_id, m.p2_ready)) if not r]
                 out.match(m.id, "noshow_reminder", missing=missing)
+
         await self._safe_job(job.ref_id, fn)
 
     async def job_noshow_escalate(self, job) -> None:
@@ -125,6 +127,7 @@ class MatchService:
                 transition(m, S.NOSHOW)
                 missing = [p for p, r in ((m.p1_id, m.p1_ready), (m.p2_id, m.p2_ready)) if not r]
                 out.match(m.id, "noshow", missing=missing)
+
         await self._safe_job(job.ref_id, fn)
 
     async def _safe_job(self, match_id: int, fn) -> None:
@@ -164,6 +167,7 @@ class MatchService:
             game = await current_game(s, m.id)
             if m.state == S.SIDE_CHOICE and game and game.id == job.ref_id and m.side_chooser_id:
                 await self._choose_side(s, m, out, m.side_chooser_id, "A", True)
+
         await self._safe_job(mid, fn)
 
     # ----- results -----
@@ -197,6 +201,7 @@ class MatchService:
             game.screenshot_url = url[:500]
             out.match(m.id, "screenshot", game_id=game.id, player_id=actor_id, url=url)
             return True
+
         try:
             return await self._run(match_id, fn)
         except UserError:
@@ -209,6 +214,7 @@ class MatchService:
             if actor_id != opponent(m, game.reported_by):
                 raise NotAllowed("Only the other player can confirm this result")
             await self._decide(s, m, game, game.reported_winner_id, out, "confirmed", actor_id)
+
         await self._run(match_id, fn)
 
     async def dispute(self, match_id: int, actor_id: int) -> None:
@@ -222,6 +228,7 @@ class MatchService:
             transition(m, S.DISPUTED)
             await audit(s, m.tournament_id, m.id, actor_id, "dispute", game_id=game.id)
             out.match(m.id, "disputed", game_id=game.id, by=actor_id)
+
         await self._run(match_id, fn)
 
     async def job_auto_confirm(self, job) -> None:
@@ -233,10 +240,12 @@ class MatchService:
             game = await current_game(s, m.id)
             if m.state == S.CONFIRMING and game and game.id == job.ref_id and game.status == GameStatus.REPORTED:
                 await self._decide(s, m, game, game.reported_winner_id, out, "auto", None)
+
         await self._safe_job(mid, fn)
 
-    async def _decide(self, s: AsyncSession, m: Match, game: Game, winner_id: int, out: Outbox,
-                      reason: str, actor_id: int | None) -> None:
+    async def _decide(
+        self, s: AsyncSession, m: Match, game: Game, winner_id: int, out: Outbox, reason: str, actor_id: int | None
+    ) -> None:
         game.status = GameStatus.CONFIRMED.value
         game.winner_id = winner_id
         game.confirmed_at = self.ctx.clock.now()
@@ -247,18 +256,30 @@ class MatchService:
         await s.flush()
         games = await games_of(s, m.id)
         sc = score(results(games), m.p1_id, m.p2_id)
-        out.match(m.id, "game_confirmed", game_id=game.id, winner_id=winner_id, reason=reason,
-                  score=(sc.p1, sc.p2), by=actor_id)
+        out.match(
+            m.id,
+            "game_confirmed",
+            game_id=game.id,
+            winner_id=winner_id,
+            reason=reason,
+            score=(sc.p1, sc.p2),
+            by=actor_id,
+        )
         winner = series_winner(sc, m.bo, m.p1_id, m.p2_id)
         if winner is not None:
             await self._finish(s, m, winner, out, walkover=False)
         else:
             transition(m, S.BETWEEN_GAMES)
-            out.match(m.id, "between_games", score=(sc.p1, sc.p2),
-                      chooser_id=next_side_chooser(results(games), m.p1_id, m.p2_id))
+            out.match(
+                m.id,
+                "between_games",
+                score=(sc.p1, sc.p2),
+                chooser_id=next_side_chooser(results(games), m.p1_id, m.p2_id),
+            )
 
-    async def _finish(self, s: AsyncSession, m: Match, winner_id: int | None, out: Outbox, *,
-                      walkover: bool, reason: str = "won") -> None:
+    async def _finish(
+        self, s: AsyncSession, m: Match, winner_id: int | None, out: Outbox, *, walkover: bool, reason: str = "won"
+    ) -> None:
         if m.state == S.DONE:
             return
         transition(m, S.DONE)
@@ -285,8 +306,13 @@ class MatchService:
                 raise UserError("This series doesn't have another game")
             number = max(g.number for g in games if g.status == GameStatus.CONFIRMED) + 1
             chooser = next_side_chooser(res, m.p1_id, m.p2_id)
-            game = Game(match_id=m.id, number=number, attempt=1, status=GameStatus.SIDE_CHOICE.value,
-                        created_at=self.ctx.clock.now())
+            game = Game(
+                match_id=m.id,
+                number=number,
+                attempt=1,
+                status=GameStatus.SIDE_CHOICE.value,
+                created_at=self.ctx.clock.now(),
+            )
             s.add(game)
             await s.flush()
             m.side_chooser_id = chooser
@@ -295,6 +321,7 @@ class MatchService:
             await self.ctx.scheduler.schedule(s, JOB_SIDE_CHOICE, game.id, self.ctx.settings.timers.side_choice_seconds)
             out.match(m.id, "side_choice", game_id=game.id, chooser_id=chooser, coin=False, number=number)
             return game.id
+
         return await self._run(match_id, fn)
 
     # ----- rematch -----
@@ -313,6 +340,7 @@ class MatchService:
             await self.ctx.scheduler.schedule(s, JOB_REMATCH_OFFER, m.id, secs)
             game = await current_game(s, m.id)
             out.match(m.id, "rematch_offered", by=actor_id, mode=mode, game_id=game.id, number=game.number)
+
         await self._run(match_id, fn)
 
     async def answer_rematch(self, match_id: int, actor_id: int, accept: bool) -> None:
@@ -330,6 +358,7 @@ class MatchService:
                 return
             reason = VoidReason.REMATCH_SAME_TEAMS if mode == "same_teams" else VoidReason.REMATCH_NEW_DRAFT
             await self._rematch(s, m, out, mode, reason, actor_id)
+
         await self._run(match_id, fn)
 
     async def job_rematch_offer(self, job) -> None:
@@ -338,10 +367,12 @@ class MatchService:
                 by = m.rematch_by
                 m.rematch_by = m.rematch_mode = None
                 out.match(m.id, "rematch_expired", by=by)
+
         await self._safe_job(job.ref_id, fn)
 
-    async def _rematch(self, s: AsyncSession, m: Match, out: Outbox, mode: str, reason: VoidReason,
-                       actor_id: int | None) -> int:
+    async def _rematch(
+        self, s: AsyncSession, m: Match, out: Outbox, mode: str, reason: VoidReason, actor_id: int | None
+    ) -> int:
         old = await current_game(s, m.id)
         if old is None:
             raise UserError("There's no game to replay")
@@ -350,21 +381,54 @@ class MatchService:
         old.step_deadline = None
         await self.ctx.scheduler.cancel(s, GAME_JOBS, old.id)
         await s.flush()
-        new = Game(match_id=m.id, number=old.number, attempt=old.attempt + 1, side_a_id=old.side_a_id,
-                   side_b_id=old.side_b_id, created_at=self.ctx.clock.now(),
-                   status=(GameStatus.PLAYING if mode == "same_teams" else GameStatus.DRAFTING).value)
+        new = Game(
+            match_id=m.id,
+            number=old.number,
+            attempt=old.attempt + 1,
+            side_a_id=old.side_a_id,
+            side_b_id=old.side_b_id,
+            created_at=self.ctx.clock.now(),
+            status=(GameStatus.PLAYING if mode == "same_teams" else GameStatus.DRAFTING).value,
+        )
         if mode == "same_teams":
             new.draft_source_id = old.draft_source_id or old.id
         s.add(new)
         await s.flush()
-        await audit(s, m.tournament_id, m.id, actor_id, "rematch", mode=mode, reason=reason.value,
-                    voided_game=old.id, new_game=new.id)
-        out.match(m.id, "rematch_accepted", mode=mode, reason=reason.value, game_id=new.id, number=new.number,
-                  attempt=new.attempt, voided_game_id=old.id)
+        await audit(
+            s,
+            m.tournament_id,
+            m.id,
+            actor_id,
+            "rematch",
+            mode=mode,
+            reason=reason.value,
+            voided_game=old.id,
+            new_game=new.id,
+        )
+        out.match(
+            m.id,
+            "rematch_accepted",
+            mode=mode,
+            reason=reason.value,
+            game_id=new.id,
+            number=new.number,
+            attempt=new.attempt,
+            voided_game_id=old.id,
+        )
         if mode == "same_teams":
             for r in await draft_rows(s, old.id):
-                s.add(DraftActionRow(game_id=new.id, step=r.step, side=r.side, player_id=r.player_id, kind=r.kind,
-                                     aniimo_slug=r.aniimo_slug, auto=r.auto, created_at=self.ctx.clock.now()))
+                s.add(
+                    DraftActionRow(
+                        game_id=new.id,
+                        step=r.step,
+                        side=r.side,
+                        player_id=r.player_id,
+                        kind=r.kind,
+                        aniimo_slug=r.aniimo_slug,
+                        auto=r.auto,
+                        created_at=self.ctx.clock.now(),
+                    )
+                )
             transition(m, S.PLAYING)
             out.match(m.id, "playing", game_id=new.id, replay=True)
         else:
@@ -378,6 +442,7 @@ class MatchService:
                 raise NotAllowed("Only the players in this match can call an admin here")
             await audit(s, m.tournament_id, m.id, actor_id, "call_admin", note=note)
             out.match(m.id, "call_admin", by=actor_id, note=note)
+
         await self._run(match_id, fn)
 
     # ----- admin -----
@@ -392,6 +457,7 @@ class MatchService:
             await self.ctx.scheduler.schedule(s, JOB_NOSHOW_ESCALATE, m.id, minutes * 60)
             await audit(s, m.tournament_id, m.id, actor_id, "admin_extend", minutes=minutes)
             out.match(m.id, "extended", minutes=minutes, by=actor_id)
+
         await self._run(match_id, fn)
 
     async def admin_award(self, match_id: int, actor_id: int, winner_id: int, reason: str = "admin") -> None:
@@ -403,6 +469,7 @@ class MatchService:
             await audit(s, m.tournament_id, m.id, actor_id, "admin_award", winner=winner_id, reason=reason)
             out.match(m.id, "admin_action", action="award", winner_id=winner_id, by=actor_id)
             await self._finish(s, m, winner_id, out, walkover=True, reason=reason)
+
         await self._run(match_id, fn)
 
     async def admin_dq_both(self, match_id: int, actor_id: int) -> None:
@@ -416,18 +483,25 @@ class MatchService:
             await audit(s, m.tournament_id, m.id, actor_id, "admin_dq_both")
             out.match(m.id, "admin_action", action="dq_both", by=actor_id)
             await self._finish(s, m, None, out, walkover=True, reason="dq_both")
+
         await self._run(match_id, fn)
 
     async def admin_set_result(self, match_id: int, actor_id: int, winner_id: int) -> None:
         async def fn(s, m: Match, out: Outbox):
-            require_state(m, S.PLAYING, S.CONFIRMING, S.DISPUTED,
-                          message="There's no game in progress. Use /admin award to decide the whole match.")
+            require_state(
+                m,
+                S.PLAYING,
+                S.CONFIRMING,
+                S.DISPUTED,
+                message="There's no game in progress. Use /admin award to decide the whole match.",
+            )
             if winner_id not in (m.p1_id, m.p2_id):
                 raise UserError("The winner must be one of the two players")
             game = await current_game(s, m.id)
             await audit(s, m.tournament_id, m.id, actor_id, "admin_set_result", game_id=game.id, winner=winner_id)
             out.match(m.id, "admin_action", action="set_result", winner_id=winner_id, by=actor_id, game_id=game.id)
             await self._decide(s, m, game, winner_id, out, "admin", actor_id)
+
         await self._run(match_id, fn)
 
     async def admin_replay(self, match_id: int, actor_id: int, mode: str) -> int:
@@ -440,6 +514,7 @@ class MatchService:
             await self.ctx.scheduler.cancel(s, JOB_REMATCH_OFFER, m.id)
             out.match(m.id, "admin_action", action="replay", mode=mode, by=actor_id)
             return await self._rematch(s, m, out, mode, VoidReason.ADMIN_REPLAY, actor_id)
+
         return await self._run(match_id, fn)
 
     async def admin_pause(self, match_id: int, actor_id: int) -> None:
@@ -451,6 +526,7 @@ class MatchService:
             transition(m, S.PAUSED)
             await audit(s, m.tournament_id, m.id, actor_id, "admin_pause")
             out.match(m.id, "paused", by=actor_id, game_id=game.id)
+
         await self._run(match_id, fn)
 
     async def admin_resume(self, match_id: int, actor_id: int) -> None:
@@ -461,6 +537,7 @@ class MatchService:
             await audit(s, m.tournament_id, m.id, actor_id, "admin_resume")
             out.match(m.id, "resumed", by=actor_id, game_id=game.id)
             await self.ctx.drafts.begin(s, m, game, out)
+
         await self._run(match_id, fn)
 
     async def admin_dq_player(self, tournament_id: int, actor_id: int, player_id: int) -> int | None:
@@ -472,10 +549,14 @@ class MatchService:
             if e.status != EntryStatus.ACTIVE:
                 raise UserError(f"That player is already {e.status}")
             m = await s.scalar(
-                select(Match).where(
-                    Match.tournament_id == tournament_id, Match.state != S.DONE,
+                select(Match)
+                .where(
+                    Match.tournament_id == tournament_id,
+                    Match.state != S.DONE,
                     (Match.p1_id == player_id) | (Match.p2_id == player_id),
-                ).order_by(Match.round).limit(1)
+                )
+                .order_by(Match.round)
+                .limit(1)
             )
         if m is None:
             raise UserError("That player has no unfinished match")
@@ -495,11 +576,20 @@ class MatchService:
                 else:
                     m.p2_id = None
                 m.forfeit_slot = slot
+
         await self._run(m.id, fn)
         return m.id
 
-    async def admin_swap(self, tournament_id: int, actor_id: int, old_id: int, new_id: int,
-                         aniimo_uid: str, display_name: str, is_fake: bool = False) -> list[int]:
+    async def admin_swap(
+        self,
+        tournament_id: int,
+        actor_id: int,
+        old_id: int,
+        new_id: int,
+        aniimo_uid: str,
+        display_name: str,
+        is_fake: bool = False,
+    ) -> list[int]:
         changed: list[int] = []
         out = Outbox()
         async with self.ctx.locks.tournament(tournament_id), self.ctx.db.transaction() as s:
@@ -511,28 +601,53 @@ class MatchService:
                 raise UserError("The old player isn't in this tournament")
             if await entry_for(s, tournament_id, new_id):
                 raise UserError("The new player is already in this tournament")
-            uid_taken = await s.scalar(select(Entry).where(Entry.tournament_id == tournament_id,
-                                                           Entry.aniimo_uid == aniimo_uid))
+            uid_taken = await s.scalar(
+                select(Entry).where(Entry.tournament_id == tournament_id, Entry.aniimo_uid == aniimo_uid)
+            )
             if uid_taken:
                 raise UserError("That Aniimo UID is already registered")
             played = await s.scalar(
-                select(Game.id).join(Match, Match.id == Game.match_id).where(
-                    Match.tournament_id == tournament_id, Game.status == GameStatus.CONFIRMED,
-                    (Match.p1_id == old_id) | (Match.p2_id == old_id)).limit(1))
-            won = await s.scalar(select(Match.id).where(Match.tournament_id == tournament_id,
-                                                        Match.winner_id == old_id, Match.is_bye.is_(False)).limit(1))
+                select(Game.id)
+                .join(Match, Match.id == Game.match_id)
+                .where(
+                    Match.tournament_id == tournament_id,
+                    Game.status == GameStatus.CONFIRMED,
+                    (Match.p1_id == old_id) | (Match.p2_id == old_id),
+                )
+                .limit(1)
+            )
+            won = await s.scalar(
+                select(Match.id)
+                .where(Match.tournament_id == tournament_id, Match.winner_id == old_id, Match.is_bye.is_(False))
+                .limit(1)
+            )
             if played or won:
                 raise UserError("That player has already played, so they can't be swapped. Use /admin dq instead.")
-            matches = list(await s.scalars(select(Match).where(
-                Match.tournament_id == tournament_id, Match.state != S.DONE,
-                (Match.p1_id == old_id) | (Match.p2_id == old_id))))
+            matches = list(
+                await s.scalars(
+                    select(Match).where(
+                        Match.tournament_id == tournament_id,
+                        Match.state != S.DONE,
+                        (Match.p1_id == old_id) | (Match.p2_id == old_id),
+                    )
+                )
+            )
             for m in matches:
                 if m.state not in (S.PENDING, S.WAITING, S.NOSHOW):
                     raise UserError("The old player's match has already started")
             p = await s.get(Player, new_id)
             if p is None:
-                s.add(Player(discord_id=new_id, aniimo_uid=aniimo_uid, display_name=display_name, rating=1000,
-                             wins=0, losses=0, is_fake=is_fake))
+                s.add(
+                    Player(
+                        discord_id=new_id,
+                        aniimo_uid=aniimo_uid,
+                        display_name=display_name,
+                        rating=1000,
+                        wins=0,
+                        losses=0,
+                        is_fake=is_fake,
+                    )
+                )
             else:
                 p.aniimo_uid, p.display_name = aniimo_uid, display_name
             await s.flush()
@@ -545,8 +660,9 @@ class MatchService:
                 changed.append(m.id)
                 out.match(m.id, "player_swapped", old_id=old_id, new_id=new_id, by=actor_id)
             # bye wins already pushed into a later match
-            for m in await s.scalars(select(Match).where(Match.tournament_id == tournament_id,
-                                                         Match.winner_id == old_id)):
+            for m in await s.scalars(
+                select(Match).where(Match.tournament_id == tournament_id, Match.winner_id == old_id)
+            ):
                 m.winner_id = new_id
             await audit(s, tournament_id, None, actor_id, "admin_swap", old=old_id, new=new_id)
         await out.flush(self.ctx.notifier)

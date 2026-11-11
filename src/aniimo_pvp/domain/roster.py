@@ -10,12 +10,26 @@ from pathlib import Path
 
 ELEMENTS = ("Fire", "Water", "Grass", "Ice", "Electric", "Rock", "Wind", "Holy", "Dark")
 ELEMENT_COLORS = {
-    "Fire": "#F26B3A", "Water": "#3D8BFD", "Grass": "#3DBE6B", "Ice": "#7FD8F0", "Electric": "#F5C531",
-    "Rock": "#B08D6A", "Wind": "#8FD3B6", "Holy": "#F3E3A2", "Dark": "#8B5CF6",
+    "Fire": "#F26B3A",
+    "Water": "#3D8BFD",
+    "Grass": "#3DBE6B",
+    "Ice": "#7FD8F0",
+    "Electric": "#F5C531",
+    "Rock": "#B08D6A",
+    "Wind": "#8FD3B6",
+    "Holy": "#F3E3A2",
+    "Dark": "#8B5CF6",
 }
 ELEMENT_EMOJI = {
-    "Fire": "🔥", "Water": "💧", "Grass": "🌿", "Ice": "❄️", "Electric": "⚡",
-    "Rock": "🪨", "Wind": "🌪️", "Holy": "✨", "Dark": "🌑",
+    "Fire": "🔥",
+    "Water": "💧",
+    "Grass": "🌿",
+    "Ice": "❄️",
+    "Electric": "⚡",
+    "Rock": "🪨",
+    "Wind": "🌪️",
+    "Holy": "✨",
+    "Dark": "🌑",
 }
 DEFAULT_COLOR = "#9AA1C0"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")

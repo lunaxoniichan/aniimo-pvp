@@ -87,11 +87,23 @@ class StatsService:
             p = await s.get(Player, player_id)
             if p is None:
                 return None
-            matches = await s.scalar(select(func.count()).select_from(Match).where(
-                (Match.p1_id == player_id) | (Match.p2_id == player_id), Match.winner_id.is_not(None),
-                Match.is_bye.is_(False), Match.walkover.is_(False)))
-            games = list(await s.scalars(select(Game).join(Match, Match.id == Game.match_id).where(
-                Game.status == GameStatus.CONFIRMED, (Match.p1_id == player_id) | (Match.p2_id == player_id))))
+            matches = await s.scalar(
+                select(func.count())
+                .select_from(Match)
+                .where(
+                    (Match.p1_id == player_id) | (Match.p2_id == player_id),
+                    Match.winner_id.is_not(None),
+                    Match.is_bye.is_(False),
+                    Match.walkover.is_(False),
+                )
+            )
+            games = list(
+                await s.scalars(
+                    select(Game)
+                    .join(Match, Match.id == Game.match_id)
+                    .where(Game.status == GameStatus.CONFIRMED, (Match.p1_id == player_id) | (Match.p2_id == player_id))
+                )
+            )
             won = sum(1 for g in games if g.winner_id == player_id)
             ids = [g.id for g in games]
             picks: Counter[str] = Counter()

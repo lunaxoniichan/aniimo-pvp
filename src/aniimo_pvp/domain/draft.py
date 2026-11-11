@@ -7,10 +7,18 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 DEFAULT_ORDER: tuple[tuple[str, str], ...] = (
-    ("A", "ban"), ("B", "ban"),
-    ("A", "pick"), ("B", "pick"), ("B", "pick"), ("A", "pick"),
-    ("B", "ban"), ("A", "ban"),
-    ("B", "pick"), ("A", "pick"), ("A", "pick"), ("B", "pick"),
+    ("A", "ban"),
+    ("B", "ban"),
+    ("A", "pick"),
+    ("B", "pick"),
+    ("B", "pick"),
+    ("A", "pick"),
+    ("B", "ban"),
+    ("A", "ban"),
+    ("B", "pick"),
+    ("A", "pick"),
+    ("A", "pick"),
+    ("B", "pick"),
 )
 
 
@@ -100,8 +108,9 @@ class DraftState:
         blocked = self.taken | (set(locked) if cur[1] == "pick" else set())
         return [s for s in roster if s not in blocked]
 
-    def apply(self, slug: str | None, roster: Iterable[str], locked: Iterable[str] = (),
-              *, auto: bool = False) -> Action:
+    def apply(
+        self, slug: str | None, roster: Iterable[str], locked: Iterable[str] = (), *, auto: bool = False
+    ) -> Action:
         cur = self.current
         if cur is None:
             raise IllegalAction("The draft is already complete")

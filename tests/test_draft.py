@@ -9,10 +9,18 @@ ROSTER = [f"a{i:02d}" for i in range(30)]
 
 def test_order_matches_spec():
     assert DEFAULT_ORDER == (
-        ("A", "ban"), ("B", "ban"),
-        ("A", "pick"), ("B", "pick"), ("B", "pick"), ("A", "pick"),
-        ("B", "ban"), ("A", "ban"),
-        ("B", "pick"), ("A", "pick"), ("A", "pick"), ("B", "pick"),
+        ("A", "ban"),
+        ("B", "ban"),
+        ("A", "pick"),
+        ("B", "pick"),
+        ("B", "pick"),
+        ("A", "pick"),
+        ("B", "ban"),
+        ("A", "ban"),
+        ("B", "pick"),
+        ("A", "pick"),
+        ("A", "pick"),
+        ("B", "pick"),
     )
     picks_a = [i + 1 for i, (s, k) in enumerate([x for x in DEFAULT_ORDER if x[1] == "pick"]) if s == "A"]
     assert picks_a == [1, 4, 6, 7]

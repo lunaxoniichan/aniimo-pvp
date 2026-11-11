@@ -59,6 +59,7 @@ async def test_bo1_ends_after_one_confirmed_game_and_has_no_next_game(ctx):
     m = (await open_matches(ctx, t.id))[0]
     assert m.bo == 1
     from tests.conftest import play_game
+
     await play_game(ctx, m.id, m.p1_id)
     m = await ctx.matches.get(m.id)
     assert m.state == "done" and m.winner_id == m.p1_id
@@ -94,6 +95,7 @@ async def test_csv_preview_blocks_over_cap_and_non_members(make_ctx):
 
     async def only_some(did):
         return "Member" if did != player_id(2) else None
+
     text = "\n".join(f"{player_id(i)},{300 + i}" for i in range(1, 6))
     preview = await ctx.tournaments.preview_players(t.id, ADMIN, text, only_some)
     assert preview.can_confirm and len(preview.rows) == 4 and preview.bracket_size == 4 and preview.byes == 0
@@ -107,6 +109,7 @@ async def test_dev_mode_allows_fake_players(make_ctx):
 
     async def nobody(_):
         return None
+
     preview = await ctx.tournaments.preview_players(t.id, ADMIN, "11,1\n22,2\n33,3\n", nobody)
     assert preview.can_confirm and all(r.fake for r in preview.rows)
     await ctx.tournaments.confirm_players(t.id, ADMIN)

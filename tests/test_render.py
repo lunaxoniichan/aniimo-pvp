@@ -50,6 +50,7 @@ async def test_board_renders_every_stage(ctx):
 async def test_board_uses_real_thumbnails(make_ctx, tmp_path):
     ctx = await make_ctx()
     from aniimo_pvp.domain.roster import load_roster
+
     img_dir = tmp_path / "imgs"
     img_dir.mkdir()
     Image.new("RGB", (300, 200), (200, 40, 160)).save(img_dir / "a00.png")

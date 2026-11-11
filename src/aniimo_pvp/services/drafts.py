@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import delete
@@ -44,6 +44,7 @@ class TurnOptions:
     available: list[Aniimo]
     locked: set[str]
     state: DraftState
+    deadline: datetime | None = None
 
 
 class DraftService:
@@ -68,8 +69,9 @@ class DraftService:
         game.step_deadline = self.ctx.clock.now() + timedelta(seconds=secs)
         await self.ctx.scheduler.schedule(s, JOB_DRAFT_STEP, game.id, secs, {"step": state.step})
         side, kind = state.current
-        out.match(m.id, "turn", game_id=game.id, step=state.step, side=side, kind=kind,
-                  player_id=self._player_for(game, side))
+        out.match(
+            m.id, "turn", game_id=game.id, step=state.step, side=side, kind=kind, player_id=self._player_for(game, side)
+        )
 
     async def options(self, match_id: int, game_id: int, step: int, actor_id: int) -> TurnOptions:
         """Legal choices for the actor's turn; raises if it's not their turn."""
@@ -92,7 +94,7 @@ class DraftService:
             locked = await fearless_locked(s, m, game, player)
             slugs = set(state.available(self.ctx.roster.slugs, locked))
             available = [a for a in self.ctx.roster.items if a.slug in slugs]
-            return TurnOptions(m.id, game.id, step, side, kind, player, available, locked, state)
+            return TurnOptions(m.id, game.id, step, side, kind, player, available, locked, state, game.step_deadline)
 
     async def submit(self, match_id: int, game_id: int, step: int, actor_id: int, slug: str) -> None:
         async def fn(s: AsyncSession, m: Match, out: Outbox):
@@ -117,16 +119,36 @@ class DraftService:
             except IllegalAction as e:
                 raise UserError(str(e)) from e
             await self._record(s, m, game, state, action, player, out)
+
         await self.ctx.matches._run(match_id, fn)
 
-    async def _record(self, s: AsyncSession, m: Match, game: Game, state: DraftState, action, player_id: int | None,
-                      out: Outbox) -> None:
-        s.add(DraftActionRow(game_id=game.id, step=action.step, side=action.side, player_id=player_id,
-                             kind=action.kind, aniimo_slug=action.slug, auto=action.auto,
-                             created_at=self.ctx.clock.now()))
+    async def _record(
+        self, s: AsyncSession, m: Match, game: Game, state: DraftState, action, player_id: int | None, out: Outbox
+    ) -> None:
+        s.add(
+            DraftActionRow(
+                game_id=game.id,
+                step=action.step,
+                side=action.side,
+                player_id=player_id,
+                kind=action.kind,
+                aniimo_slug=action.slug,
+                auto=action.auto,
+                created_at=self.ctx.clock.now(),
+            )
+        )
         await s.flush()
-        out.match(m.id, "action", game_id=game.id, step=action.step, side=action.side, kind=action.kind,
-                  slug=action.slug, auto=action.auto, player_id=player_id)
+        out.match(
+            m.id,
+            "action",
+            game_id=game.id,
+            step=action.step,
+            side=action.side,
+            kind=action.kind,
+            slug=action.slug,
+            auto=action.auto,
+            player_id=player_id,
+        )
         await self.begin(s, m, game, out)
 
     async def job_step_timeout(self, job) -> None:
@@ -167,8 +189,9 @@ class DraftService:
                 raise UserError("This replay reuses an earlier draft; use /admin replay new_draft instead")
             last = rows[-1]
             await s.execute(delete(DraftActionRow).where(DraftActionRow.id == last.id))
-            await audit(s, m.tournament_id, m.id, actor_id, "admin_undo", game_id=game.id, step=last.step,
-                        slug=last.aniimo_slug)
+            await audit(
+                s, m.tournament_id, m.id, actor_id, "admin_undo", game_id=game.id, step=last.step, slug=last.aniimo_slug
+            )
             out.match(m.id, "undo", game_id=game.id, step=last.step, slug=last.aniimo_slug, by=actor_id)
             if m.state == S.PLAYING:
                 game.status = GameStatus.DRAFTING.value
@@ -177,4 +200,5 @@ class DraftService:
                 await self.begin(s, m, game, out)
             else:  # paused: stay paused, just refresh the board
                 out.match(m.id, "paused", by=actor_id, game_id=game.id)
+
         await self.ctx.matches._run(match_id, fn)

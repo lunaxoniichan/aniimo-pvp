@@ -24,13 +24,16 @@ def test_wins_needed():
         wins_needed(2)
 
 
-@pytest.mark.parametrize("bo,results,winner", [
-    (1, [P1], P1),
-    (3, [P1, P1], P1),
-    (3, [P1, P2, P2], P2),
-    (5, [P1, P2, P1, P2, P1], P1),
-    (3, [P1], None),
-])
+@pytest.mark.parametrize(
+    "bo,results,winner",
+    [
+        (1, [P1], P1),
+        (3, [P1, P1], P1),
+        (3, [P1, P2, P2], P2),
+        (5, [P1, P2, P1, P2, P1], P1),
+        (3, [P1], None),
+    ],
+)
 def test_series_detection(bo, results, winner):
     games = [g(i + 1, 1, "confirmed", w) for i, w in enumerate(results)]
     assert series_winner(score(games, P1, P2), bo, P1, P2) == winner

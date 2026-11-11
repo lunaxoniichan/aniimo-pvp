@@ -33,8 +33,9 @@ class BracketRenderer:
             text = text[:-1]
         return text + "…"
 
-    def render(self, title: str, format_key: str, rounds: list[list[BracketBox]],
-               highlight_match_id: int | None = None) -> bytes:
+    def render(
+        self, title: str, format_key: str, rounds: list[list[BracketBox]], highlight_match_id: int | None = None
+    ) -> bytes:
         size = len(rounds[0]) * 2 if rounds else 2
         r1 = len(rounds[0]) if rounds else 1
         compact = r1 > 16
@@ -46,8 +47,13 @@ class BracketRenderer:
         height = header + r1 * unit + pad
         img = Image.new("RGB", (max(width, 560), height), BG)
         d = ImageDraw.Draw(img)
-        d.text((pad, 22), self._fit(title, self.fonts.display(22), width - 2 * pad), font=self.fonts.display(22),
-               fill=TEXT, anchor="lm")
+        d.text(
+            (pad, 22),
+            self._fit(title, self.fonts.display(22), width - 2 * pad),
+            font=self.fonts.display(22),
+            fill=TEXT,
+            anchor="lm",
+        )
         fmt = formats.FORMATS.get(format_key)
         sub = f"Single elimination · {fmt.label if fmt else format_key} · {size}-player bracket"
         d.text((pad, 46), sub, font=self.fonts.inter(13), fill=MUTED, anchor="lm")
@@ -60,7 +66,7 @@ class BracketRenderer:
             x = pad + r_idx * (box_w + gap)
             label = f"{formats.round_name(players).upper()} · BO{formats.bo_for_round(format_key, size, r_idx + 1)}"
             d.text((x, header - 12), label, font=self.fonts.inter(11, "bold"), fill=MUTED, anchor="lm")
-            span = unit * (2 ** r_idx)
+            span = unit * (2**r_idx)
             for m in matches:
                 cy = header + span * (m.slot + 0.5)
                 centers[(r_idx, m.slot)] = cy

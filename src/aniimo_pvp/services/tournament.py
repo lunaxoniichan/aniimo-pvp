@@ -114,9 +114,16 @@ class TournamentService:
             )
             if existing:
                 raise UserError(f"{existing.name} is still {existing.status}. Finish or /tournament cancel it first.")
-            t = Tournament(guild_id=guild_id, name=name, status=TournamentStatus.SETUP.value,
-                           player_cap=formats.DEFAULT_CAP, format=formats.DEFAULT_FORMAT, fearless=False,
-                           created_by=actor_id, created_at=self.ctx.clock.now())
+            t = Tournament(
+                guild_id=guild_id,
+                name=name,
+                status=TournamentStatus.SETUP.value,
+                player_cap=formats.DEFAULT_CAP,
+                format=formats.DEFAULT_FORMAT,
+                fearless=False,
+                created_by=actor_id,
+                created_at=self.ctx.clock.now(),
+            )
             s.add(t)
             await s.flush()
             await audit(s, t.id, None, actor_id, "tournament_create", name=name)
@@ -124,8 +131,16 @@ class TournamentService:
         await out.flush(self.ctx.notifier)
         return t
 
-    async def set_options(self, tournament_id: int, actor_id: int, *, cap: int | None = None,
-                          fmt: str | None = None, fearless: bool | None = None, name: str | None = None) -> Tournament:
+    async def set_options(
+        self,
+        tournament_id: int,
+        actor_id: int,
+        *,
+        cap: int | None = None,
+        fmt: str | None = None,
+        fearless: bool | None = None,
+        name: str | None = None,
+    ) -> Tournament:
         out = Outbox()
         async with self.ctx.locks.tournament(tournament_id), self.ctx.db.transaction() as s:
             t = await get_tournament(s, tournament_id)
@@ -165,8 +180,9 @@ class TournamentService:
         return t
 
     # ----- step 2: players -----
-    async def preview_players(self, tournament_id: int, actor_id: int, text: str,
-                              lookup: MemberLookup | None = None) -> PlayersPreview:
+    async def preview_players(
+        self, tournament_id: int, actor_id: int, text: str, lookup: MemberLookup | None = None
+    ) -> PlayersPreview:
         dev = self.ctx.settings.dev_mode
         out = Outbox()
         async with self.ctx.locks.tournament(tournament_id):
@@ -203,11 +219,20 @@ class TournamentService:
                 t = await get_tournament(s, tournament_id)
                 if t.status == TournamentStatus.SETUP:
                     t.status = TournamentStatus.REGISTRATION.value
-                t.pending_players = [
-                    {"line": r.line, "discord_id": r.discord_id, "aniimo_uid": r.aniimo_uid,
-                     "display_name": r.display_name, "fake": r.fake}
-                    for r in preview.rows
-                ] if preview.can_confirm else None
+                t.pending_players = (
+                    [
+                        {
+                            "line": r.line,
+                            "discord_id": r.discord_id,
+                            "aniimo_uid": r.aniimo_uid,
+                            "display_name": r.display_name,
+                            "fake": r.fake,
+                        }
+                        for r in preview.rows
+                    ]
+                    if preview.can_confirm
+                    else None
+                )
                 await audit(s, t.id, None, actor_id, "players_preview", valid=n, issues=len(preview.issues))
             out.tournament(tournament_id, "preview", preview=preview)
         await out.flush(self.ctx.notifier)
@@ -226,21 +251,46 @@ class TournamentService:
             for r in rows:
                 p = await s.get(Player, r["discord_id"])
                 if p is None:
-                    p = Player(discord_id=r["discord_id"], aniimo_uid=r["aniimo_uid"],
-                               display_name=r["display_name"], rating=elo.DEFAULT_RATING, wins=0, losses=0,
-                               is_fake=bool(r.get("fake")))
+                    p = Player(
+                        discord_id=r["discord_id"],
+                        aniimo_uid=r["aniimo_uid"],
+                        display_name=r["display_name"],
+                        rating=elo.DEFAULT_RATING,
+                        wins=0,
+                        losses=0,
+                        is_fake=bool(r.get("fake")),
+                    )
                     s.add(p)
                 else:
                     p.aniimo_uid, p.display_name, p.is_fake = r["aniimo_uid"], r["display_name"], bool(r.get("fake"))
             await s.flush()  # players must exist before entries reference them
             for r in rows:
-                s.add(Entry(tournament_id=t.id, discord_id=r["discord_id"], display_name=r["display_name"],
-                            aniimo_uid=r["aniimo_uid"], status=EntryStatus.ACTIVE.value))
+                s.add(
+                    Entry(
+                        tournament_id=t.id,
+                        discord_id=r["discord_id"],
+                        display_name=r["display_name"],
+                        aniimo_uid=r["aniimo_uid"],
+                        status=EntryStatus.ACTIVE.value,
+                    )
+                )
             t.pending_players = None
             await audit(s, t.id, None, actor_id, "players_confirm", count=len(rows))
             out.tournament(t.id, "players_confirmed", count=len(rows))
         await out.flush(self.ctx.notifier)
         return len(rows)
+
+    async def discard_preview(self, tournament_id: int, actor_id: int) -> None:
+        async with self.ctx.locks.tournament(tournament_id), self.ctx.db.transaction() as s:
+            t = await get_tournament(s, tournament_id)
+            t.pending_players = None
+            await audit(s, t.id, None, actor_id, "players_discard")
+
+    async def set_message_ids(self, tournament_id: int, **ids: int | None) -> None:
+        async with self.ctx.db.transaction() as s:
+            t = await get_tournament(s, tournament_id)
+            for k, v in ids.items():
+                setattr(t, k, v)
 
     # ----- start + rounds -----
     async def start(self, tournament_id: int, actor_id: int, seed: str | None = None) -> Tournament:
@@ -265,8 +315,17 @@ class TournamentService:
                     bo = formats.bo_for_round(t.format, plan.size, r_idx)
                     round_rows = []
                     for pm in planned_round:
-                        m = Match(tournament_id=t.id, round=r_idx, slot=pm.slot, bo=bo, p1_id=pm.p1, p2_id=pm.p2,
-                                  state=MatchState.PENDING.value, is_bye=pm.is_bye, next_slot=pm.next_position)
+                        m = Match(
+                            tournament_id=t.id,
+                            round=r_idx,
+                            slot=pm.slot,
+                            bo=bo,
+                            p1_id=pm.p1,
+                            p2_id=pm.p2,
+                            state=MatchState.PENDING.value,
+                            is_bye=pm.is_bye,
+                            next_slot=pm.next_position,
+                        )
                         if pm.is_bye:
                             m.state = MatchState.DONE.value
                             m.winner_id = pm.winner
@@ -296,9 +355,13 @@ class TournamentService:
         tm = self.ctx.settings.timers
         async with self.ctx.db.transaction() as s:
             t = await get_tournament(s, tournament_id)
-            matches = list(await s.scalars(
-                select(Match).where(Match.tournament_id == tournament_id, Match.round == round_no).order_by(Match.slot)
-            ))
+            matches = list(
+                await s.scalars(
+                    select(Match)
+                    .where(Match.tournament_id == tournament_id, Match.round == round_no)
+                    .order_by(Match.slot)
+                )
+            )
             for m in matches:
                 if m.state != MatchState.PENDING or m.p1_id is None or m.p2_id is None:
                     continue
@@ -323,8 +386,11 @@ class TournamentService:
                 t = await get_tournament(s, tournament_id)
                 if t.status != TournamentStatus.RUNNING:
                     raise UserError("The tournament isn't running")
-                pending = await s.scalar(select(func.count()).select_from(Match).where(
-                    Match.tournament_id == t.id, Match.round == t.current_round, Match.state != MatchState.DONE))
+                pending = await s.scalar(
+                    select(func.count())
+                    .select_from(Match)
+                    .where(Match.tournament_id == t.id, Match.round == t.current_round, Match.state != MatchState.DONE)
+                )
                 if pending:
                     raise UserError(f"Round {t.current_round} still has {pending} unfinished match(es)")
                 if t.current_round >= formats.round_count(t.bracket_size or 2):
@@ -361,6 +427,8 @@ class TournamentService:
             if e and e.status == EntryStatus.ACTIVE:
                 e.status = EntryStatus.ELIMINATED.value
         await self._apply_elo(s, m)
+        if not m.is_bye:
+            out.match(m.id, "advanced", winner_id=m.winner_id, loser_id=loser, next_match_id=m.next_match_id)
         if m.next_match_id is None:
             return
         nxt = await s.get(Match, m.next_match_id)
@@ -391,8 +459,9 @@ class TournamentService:
     async def _apply_elo(self, s, m: Match) -> None:
         if m.walkover or m.is_bye or m.winner_id is None or m.p1_id is None or m.p2_id is None:
             return
-        played = await s.scalar(select(func.count()).select_from(Game).where(
-            Game.match_id == m.id, Game.status == GameStatus.CONFIRMED))
+        played = await s.scalar(
+            select(func.count()).select_from(Game).where(Game.match_id == m.id, Game.status == GameStatus.CONFIRMED)
+        )
         if not played:
             return
         winner = await s.get(Player, m.winner_id)
@@ -413,8 +482,11 @@ class TournamentService:
         t = await get_tournament(s, tournament_id)
         if t.status != TournamentStatus.RUNNING or t.completed_round >= t.current_round:
             return
-        pending = await s.scalar(select(func.count()).select_from(Match).where(
-            Match.tournament_id == t.id, Match.round == t.current_round, Match.state != MatchState.DONE))
+        pending = await s.scalar(
+            select(func.count())
+            .select_from(Match)
+            .where(Match.tournament_id == t.id, Match.round == t.current_round, Match.state != MatchState.DONE)
+        )
         if pending:
             return
         t.completed_round = t.current_round

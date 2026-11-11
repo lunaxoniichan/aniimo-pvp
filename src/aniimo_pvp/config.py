@@ -80,8 +80,9 @@ class Settings(BaseModel):
 
     def resolve(self, base: Path) -> Settings:
         """Make relative paths relative to the project folder."""
-        paths = {k: str((base / v).resolve()) if not Path(v).is_absolute() else v
-                 for k, v in self.paths.model_dump().items()}
+        paths = {
+            k: str((base / v).resolve()) if not Path(v).is_absolute() else v for k, v in self.paths.model_dump().items()
+        }
         return self.model_copy(update={"paths": Paths(**paths)})
 
 

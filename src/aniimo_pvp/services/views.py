@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from ..db.models import Entry, Game, Match, Player, Tournament
+from ..db.models import Entry, Game, Job, Match, Player, Tournament
 from ..domain import formats
 from ..domain.draft import DraftState, phase_label
 from ..domain.roster import Aniimo
@@ -62,6 +62,7 @@ class MatchView:
     draft: DraftState | None
     order: tuple[tuple[str, str], ...]
     roster_lookup: dict[str, Aniimo] = field(default_factory=dict)
+    due: dict[str, datetime] = field(default_factory=dict)  # pending timer kind -> due time
 
     @property
     def round_name(self) -> str:
@@ -162,8 +163,9 @@ class MatchView:
         for i, (s, kd) in enumerate(self.order):
             if i < len(done):
                 a = done[i]
-                out.append(StepView(i + 1, s, kd, "done", self.roster_lookup.get(a.slug or ""), a.auto,
-                                    a.kind == "skip"))
+                out.append(
+                    StepView(i + 1, s, kd, "done", self.roster_lookup.get(a.slug or ""), a.auto, a.kind == "skip")
+                )
             elif i == len(done) and self.draft is not None and not self.draft.complete:
                 out.append(StepView(i + 1, s, kd, "active"))
             else:
@@ -194,7 +196,13 @@ async def load_match_view(ctx: AppContext, match_id: int, game_id: int | None = 
         p1 = await _player_info(s, t.id, m.p1_id)
         p2 = await _player_info(s, t.id, m.p2_id)
         sc = score(results(games), m.p1_id or -1, m.p2_id or -2)
-        return MatchView(t, m, p1, p2, games, game, sc, draft, ctx.order, ctx.roster.by_slug)
+        due: dict[str, datetime] = {}
+        refs = [(Job.ref_id == m.id) & Job.kind.in_(["noshow_reminder", "noshow_escalate", "rematch_offer"])]
+        if game:
+            refs.append((Job.ref_id == game.id) & Job.kind.in_(["side_choice", "draft_step", "auto_confirm"]))
+        for j in await s.scalars(select(Job).where(Job.status == "pending", refs[0] | refs[-1])):
+            due[j.kind] = j.due_at
+        return MatchView(t, m, p1, p2, games, game, sc, draft, ctx.order, ctx.roster.by_slug, due)
 
 
 @dataclass
@@ -218,10 +226,14 @@ async def load_bracket(ctx: AppContext, tournament_id: int) -> tuple[Tournament,
     async with ctx.db.session() as s:
         t = await s.get(Tournament, tournament_id)
         entries = {e.discord_id: e for e in await s.scalars(select(Entry).where(Entry.tournament_id == tournament_id))}
-        matches = list(await s.scalars(select(Match).where(Match.tournament_id == tournament_id)
-                                       .order_by(Match.round, Match.slot)))
-        all_games = list(await s.scalars(select(Game).join(Match, Match.id == Game.match_id)
-                                         .where(Match.tournament_id == tournament_id)))
+        matches = list(
+            await s.scalars(select(Match).where(Match.tournament_id == tournament_id).order_by(Match.round, Match.slot))
+        )
+        all_games = list(
+            await s.scalars(
+                select(Game).join(Match, Match.id == Game.match_id).where(Match.tournament_id == tournament_id)
+            )
+        )
     by_match: dict[int, list[Game]] = {}
     for g in all_games:
         by_match.setdefault(g.match_id, []).append(g)
@@ -238,14 +250,25 @@ async def load_bracket(ctx: AppContext, tournament_id: int) -> tuple[Tournament,
         winner = None
         if m.winner_id is not None:
             winner = 1 if m.winner_id == m.p1_id else 2 if m.winner_id == m.p2_id else None
-        box = BracketBox(m.id, m.round, m.slot, e1.display_name if e1 else None, e2.display_name if e2 else None,
-                         e1.seed if e1 and m.round == 1 else None, e2.seed if e2 and m.round == 1 else None,
-                         winner, m.is_bye, m.state, sc)
+        box = BracketBox(
+            m.id,
+            m.round,
+            m.slot,
+            e1.display_name if e1 else None,
+            e2.display_name if e2 else None,
+            e1.seed if e1 and m.round == 1 else None,
+            e2.seed if e2 and m.round == 1 else None,
+            winner,
+            m.is_bye,
+            m.state,
+            sc,
+        )
         if m.round > 1:
             prev = formats.short_round_name((t.bracket_size or 2) >> (m.round - 2))
 
             def feeder(n: int, prev: str = prev) -> str:
                 return f"Winner {prev}{n}" if prev in ("QF", "SF") else f"Winner {prev} #{n}"
+
             box.feeder1 = feeder(m.slot * 2 + 1)
             box.feeder2 = feeder(m.slot * 2 + 2)
         rounds[m.round - 1].append(box)

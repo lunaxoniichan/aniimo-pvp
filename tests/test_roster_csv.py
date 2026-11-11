@@ -15,9 +15,9 @@ def write(tmp_path: Path, text: str) -> Path:
 def test_roster_valid_with_placeholders(tmp_path):
     (tmp_path / "img").mkdir()
     (tmp_path / "img" / "emberlynx.png").write_bytes(b"x")
-    p = write(tmp_path, "slug,name,element,role,image\n"
-                        "emberlynx,Emberlynx,fire,Attacker,\n"
-                        ",Frost Paw,Ice,,missing.png\n")
+    p = write(
+        tmp_path, "slug,name,element,role,image\nemberlynx,Emberlynx,fire,Attacker,\n,Frost Paw,Ice,,missing.png\n"
+    )
     roster, warnings = load_roster(p, tmp_path / "img")
     assert len(roster) == 2
     assert roster.get("emberlynx").element == "Fire" and roster.get("emberlynx").image_path is not None

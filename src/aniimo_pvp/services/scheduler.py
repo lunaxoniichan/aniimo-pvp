@@ -31,10 +31,17 @@ class Scheduler:
     def register(self, kind: str, handler: JobHandler) -> None:
         self.handlers[kind] = handler
 
-    async def schedule(self, s: AsyncSession, kind: str, ref_id: int, seconds: float,
-                       payload: dict[str, Any] | None = None) -> Job:
-        job = Job(kind=kind, ref_id=ref_id, due_at=self.clock.now() + timedelta(seconds=seconds),
-                  duration_seconds=float(seconds), payload=payload, status="pending")
+    async def schedule(
+        self, s: AsyncSession, kind: str, ref_id: int, seconds: float, payload: dict[str, Any] | None = None
+    ) -> Job:
+        job = Job(
+            kind=kind,
+            ref_id=ref_id,
+            due_at=self.clock.now() + timedelta(seconds=seconds),
+            duration_seconds=float(seconds),
+            payload=payload,
+            status="pending",
+        )
         s.add(job)
         await s.flush()
         self._wake.set()
@@ -56,9 +63,11 @@ class Scheduler:
     async def run_due(self) -> int:
         now = self.clock.now()
         async with self.db.transaction() as s:
-            jobs = list(await s.scalars(
-                select(Job).where(Job.status == "pending", Job.due_at <= now).order_by(Job.due_at, Job.id)
-            ))
+            jobs = list(
+                await s.scalars(
+                    select(Job).where(Job.status == "pending", Job.due_at <= now).order_by(Job.due_at, Job.id)
+                )
+            )
             for job in jobs:
                 job.status = "running"
         for job in jobs:

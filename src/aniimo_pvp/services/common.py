@@ -111,10 +111,14 @@ def opponent(match: Match, player_id: int | None) -> int | None:
     return None
 
 
-async def audit(s: AsyncSession, tournament_id: int | None, match_id: int | None, actor_id: int | None,
-                action: str, **payload: Any) -> None:
-    s.add(AuditLog(tournament_id=tournament_id, match_id=match_id, actor_id=actor_id, action=action,
-                   payload=payload or None))
+async def audit(
+    s: AsyncSession, tournament_id: int | None, match_id: int | None, actor_id: int | None, action: str, **payload: Any
+) -> None:
+    s.add(
+        AuditLog(
+            tournament_id=tournament_id, match_id=match_id, actor_id=actor_id, action=action, payload=payload or None
+        )
+    )
 
 
 async def entry_for(s: AsyncSession, tournament_id: int, discord_id: int) -> Entry | None:

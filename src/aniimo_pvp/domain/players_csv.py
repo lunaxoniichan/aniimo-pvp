@@ -10,9 +10,17 @@ from dataclasses import dataclass
 _FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*$")
 _UID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 HEADER_ALIASES = {
-    "discord_id": "discord_id", "discord": "discord_id", "id": "discord_id", "user_id": "discord_id",
-    "aniimo_uid": "aniimo_uid", "uid": "aniimo_uid", "aniimo_id": "aniimo_uid", "aniimo": "aniimo_uid",
-    "display_name": "display_name", "name": "display_name", "nickname": "display_name",
+    "discord_id": "discord_id",
+    "discord": "discord_id",
+    "id": "discord_id",
+    "user_id": "discord_id",
+    "aniimo_uid": "aniimo_uid",
+    "uid": "aniimo_uid",
+    "aniimo_id": "aniimo_uid",
+    "aniimo": "aniimo_uid",
+    "display_name": "display_name",
+    "name": "display_name",
+    "nickname": "display_name",
 }
 
 

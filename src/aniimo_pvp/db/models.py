@@ -116,8 +116,7 @@ class Game(Base):
     __table_args__ = (
         UniqueConstraint("match_id", "number", "attempt"),
         # at most one live (not voided) attempt per game number
-        Index("uq_game_live_attempt", "match_id", "number", unique=True,
-              sqlite_where=text("status != 'voided'")),
+        Index("uq_game_live_attempt", "match_id", "number", unique=True, sqlite_where=text("status != 'voided'")),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)

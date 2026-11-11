@@ -41,8 +41,14 @@ class AppContext:
         return self.settings.draft_order
 
 
-def build_context(settings: Settings, db: Database, roster: Roster, notifier: Notifier,
-                  clock: Clock | None = None, rng: random.Random | None = None) -> AppContext:
+def build_context(
+    settings: Settings,
+    db: Database,
+    roster: Roster,
+    notifier: Notifier,
+    clock: Clock | None = None,
+    rng: random.Random | None = None,
+) -> AppContext:
     from .common import (
         JOB_AUTO_CONFIRM,
         JOB_DRAFT_STEP,
@@ -56,8 +62,14 @@ def build_context(settings: Settings, db: Database, roster: Roster, notifier: No
     from .stats import StatsService
     from .tournament import TournamentService
 
-    ctx = AppContext(settings=settings, db=db, roster=roster, notifier=notifier,
-                     clock=clock or Clock(), rng=rng or random.SystemRandom())
+    ctx = AppContext(
+        settings=settings,
+        db=db,
+        roster=roster,
+        notifier=notifier,
+        clock=clock or Clock(),
+        rng=rng or random.SystemRandom(),
+    )
     ctx.scheduler = Scheduler(db, ctx.clock)
     ctx.tournaments = TournamentService(ctx)
     ctx.matches = MatchService(ctx)
