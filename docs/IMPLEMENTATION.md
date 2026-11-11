@@ -49,14 +49,15 @@ timers, so one person with two accounts can test a whole tournament.
 
 ## P2 · Tournament + bracket
 
-- [ ] 2.1 `domain/bracket.py`: shuffle (`secrets`, seed logged), size 2^k, standard seed positions, byes, next-match links, advancement
-- [ ] 2.2 `/tournament create · start · status · cancel` with status guards
+- [ ] 2.1 `domain/bracket.py`: shuffle (`secrets`, seed logged), size 2^k, standard seed positions, byes, next-match links, advancement · `domain/formats.py`: Quick / Standard / Championship, Bo per round counted from the final
+- [ ] 2.2 `/tournament create name` → step 1 panel (player cap 8–128, format, Fearless, live round preview) → **Next: add players** → step 2 CSV · `/tournament start · status · cancel` with status guards; cap/format locked after start
 - [ ] 2.3 `render/bracket.py`: bracket image (byes, winners highlighted) + text table fallback
 - [ ] 2.4 `#announce` post: image + Round 1 table with mentions
 - [ ] 2.5 One private thread per match (not invitable), players + admin role added, UID card. Bye matches auto-resolve with no thread
 
 **Validate**
-- Unit, for N = 2…64: bracket size correct · byes = size − N · no bye-vs-bye · every player exactly once · same seed gives the same bracket · winners fill the correct next slot
+- Unit: format table matches design §3.4 (Bo per round and max games for every cap) · CSV over the cap rejected
+- Unit, for N = 2…128: bracket size correct · byes = size − N · no bye-vs-bye · every player exactly once · same seed gives the same bracket · winners fill the correct next slot
 - Render: bracket PNG for N = 5, 8, 13 written to `tests/output/` → check by eye
 - Manual (dev mode, 2 real + 4 fake): start → image + table in `#announce` · 2 byes advanced · threads created · a non-player can't see the private threads
 
@@ -88,7 +89,7 @@ timers, so one person with two accounts can test a whole tournament.
 
 ## P5 · Results + progression (🏁 MVP)
 
-- [ ] 5.1 `domain/series.py`: BoN scoring from `confirmed` games only, wins needed = ⌈Bo/2⌉, final_bo override, `can_next_game()` (false for Bo1 or a decided series)
+- [ ] 5.1 `domain/series.py`: BoN scoring from `confirmed` games only, wins needed = ⌈Bo/2⌉, Bo per match from the format, `can_next_game()` (false for Bo1 or a decided series)
 - [ ] 5.2 🏆 Report (winner buttons, optional screenshot) → ✅ Confirm / ⚠️ Dispute · `auto_confirm` job
 - [ ] 5.3 🔁 Rematch (design §4.1): only while `Playing`, opponent accepts · `rematch_offer` job · voids the current attempt and creates the same `number` with `attempt + 1`. Same teams copies the draft (`draft_source_id`) · new draft restarts at step 1
 - [ ] 5.4 ▶ Next game (Bo3/Bo5 only): creates `number + 1`, `attempt 1` → side choice by the loser · button never rendered in Bo1

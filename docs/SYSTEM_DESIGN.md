@@ -12,7 +12,7 @@ thumbnails.
 | Interface | Discord only: slash commands, embeds, buttons, select menus, rendered PNGs |
 | Hosting | Organiser's PC, Python 3.11+. Outbound gateway connection only, so no public URL |
 | Bracket | Single elimination, random shuffle, byes spread so no bye meets a bye |
-| Series | Bo1 / Bo3 / Bo5 per tournament (optional different final) |
+| Format | Player cap 8 / 16 / 32 / 64 / 128 + one standard format (Quick, Standard, Championship) that sets Bo per round, counted back from the final (§3.4) |
 | Draft | 2 bans + 4 picks per player, two-phase split order, exclusive picks |
 | Side choice | G1 coin flip, then winner chooses · G2+ previous game's loser chooses |
 | Timer | 45 s/step; timeout → ban skipped, pick random |
@@ -21,6 +21,8 @@ thumbnails.
 | No-show | Reminder at 10 min, admin decides at 15 min |
 | Next round | Admin clicks **▶ Start Round N** |
 | Extras | Live draft feed, pick/ban stats, Fearless toggle, ELO leaderboard |
+| Look | Side A blue, Side B orange (colour-blind safe) · a fresh turn message per step so the active player is pinged · picker previews the selected Aniimo · result screenshots are posted in the thread |
+| Mockups | Approved screens: [Aniimo Draft UI canvas](https://claude.ai/artifact/7112nacYyipqnhKMCC3ELu) |
 
 ## 2. Architecture
 
@@ -63,7 +65,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Run /tournament create<br/>name · series · fearless"] --> B["Paste or attach CSV in admin channel"]
+  A0["Run /tournament create name"] --> A["Step 1 panel: player cap · format · fearless<br/>live round preview"]
+  A --> B["Next: add players<br/>paste or attach CSV in admin channel"]
   B --> C{"Preview OK?"}
   C -- "errors listed" --> B
   C -- "✅ Confirm players" --> D["Run /tournament start"]
@@ -105,8 +108,10 @@ sequenceDiagram
   participant AdminCh as Admin channel
   participant Ann as Announce channel
   participant Th as Match threads
-  Admin->>Bot: /tournament create (name, series, fearless)
-  Bot-->>Admin: Created · status REGISTRATION
+  Admin->>Bot: /tournament create (name)
+  Bot-->>AdminCh: Step 1 panel: cap, format, fearless + round preview
+  Admin->>Bot: Pick cap + format · Next: add players
+  Bot-->>AdminCh: Step 2: paste the CSV · status REGISTRATION
   Admin->>AdminCh: Paste CSV or attach .csv
   Bot->>Bot: Parse + validate (member? duplicate? UID?)
   Bot-->>AdminCh: Preview: N players, bracket size, byes, errors
@@ -119,6 +124,32 @@ sequenceDiagram
     Bot->>Th: UID card + control panel · ping players
   end
 ```
+
+### 3.4 Formats
+
+The admin picks a player cap and one standard format. The format sets the
+series length per round, counted back from the final, so it fits any bracket
+size up to 128.
+
+| Format | Round of 128 / 64 / 32 | Round of 16 | Quarterfinal | Semifinal | Final |
+|---|---|---|---|---|---|
+| Quick | Bo1 | Bo1 | Bo1 | Bo1 | Bo3 |
+| **Standard** (default) | Bo1 | Bo3 | Bo3 | Bo3 | Bo5 |
+| Championship | Bo3 | Bo3 | Bo3 | Bo5 | Bo5 |
+
+| Cap | First round | Rounds | Matches | Max games Quick / Standard / Championship |
+|---|---|---|---|---|
+| 8 | Quarterfinal | 3 | 7 | 9 / 23 / 27 |
+| 16 | Round of 16 | 4 | 15 | 17 / 47 / 51 |
+| 32 | Round of 32 | 5 | 31 | 33 / 63 / 99 |
+| 64 | Round of 64 | 6 | 63 | 65 / 95 / 195 |
+| 128 | Round of 128 | 7 | 127 | 129 / 159 / 387 |
+
+* The cap is a maximum. The bracket uses the next power of two above the real
+  player count (7 players with a 32 cap → 8 slots; 27 players → 32 slots, 5 byes).
+* A CSV with more players than the cap is rejected. 128 is the hard maximum.
+* Cap, format and Fearless can change until **Start**, then they're locked.
+  Each match stores its own `bo` when it's created.
 
 ## 4. Match lifecycle
 
@@ -234,20 +265,22 @@ sequenceDiagram
   participant Bot
   participant T as Match thread
   participant L as Live-draft channel
-  Bot->>T: Board image · "Kai — PICK" · countdown · 🎯 button
+  Bot->>T: New turn message: ping · board image · countdown · 🎯 button (old one deleted)
   O->>Bot: Clicks 🎯
   Bot-->>O: Private: not your turn
   P->>Bot: Clicks 🎯
   Bot-->>P: Private picker: element menu
   P->>Bot: Chooses element
   Bot-->>P: Aniimo menu (legal only, with icons) · 🔍 search
-  P->>Bot: Chooses Aniimo · 🔒 Lock in
+  P->>Bot: Chooses Aniimo
+  Bot-->>P: Preview: large thumbnail + name · 🔒 Lock in
+  P->>Bot: 🔒 Lock in
   Bot->>Bot: Lock match · check turn + step id + legality · save · cancel timer
-  Bot->>T: Edit board · next turn
+  Bot->>T: Delete turn message · post next turn (ping + board)
   Bot->>L: Edit live board
   alt 45 s timeout
     Bot->>Bot: Ban → skip · Pick → random legal (tagged auto)
-    Bot->>T: Edit board · next turn
+    Bot->>T: Post next turn (board shows the auto tag)
   end
 ```
 
@@ -263,7 +296,7 @@ sequenceDiagram
 └──────────────────────┴──────────────────────┴──────────────────────┘
 ```
 
-Bans are greyed with a red ✕, the active slot glows, and auto actions are tagged.
+Side A is blue and Side B orange. Bans are greyed with a red ✕, the active slot glows, and auto actions are tagged.
 A missing thumbnail falls back to a placeholder in the element colour with the
 creature's initials.
 
@@ -277,7 +310,7 @@ sequenceDiagram
   participant T as Match thread
   participant Ann as Announce channel
   actor Adm as Admin role
-  R->>Bot: 🏆 Report result (winner, optional screenshot)
+  R->>Bot: 🏆 Report result (winner) · a screenshot posted in the thread is attached
   Bot->>T: "Luna reported: Luna won G1" · Confirm / Dispute
   alt Opponent confirms or 10 min pass
     Bot->>Bot: Record game · update series score
@@ -320,9 +353,9 @@ erDiagram
     int id PK
     bigint guild_id
     string name
-    string status "registration, running, finished, cancelled"
-    int series_bo
-    int final_bo
+    string status "setup, registration, running, finished, cancelled"
+    int player_cap "8, 16, 32, 64, 128"
+    string format "quick, standard, championship"
     bool fearless
     string rng_seed
   }
@@ -341,6 +374,7 @@ erDiagram
     bigint p2_id FK
     bigint winner_id FK
     string state
+    int bo "from the format, per round"
     bigint thread_id
     bigint panel_msg_id
     bigint live_msg_id
