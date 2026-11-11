@@ -88,16 +88,18 @@ timers, so one person with two accounts can test a whole tournament.
 
 ## P5 · Results + progression (🏁 MVP)
 
-- [ ] 5.1 `domain/series.py`: BoN scoring, winner detection, final_bo override
+- [ ] 5.1 `domain/series.py`: BoN scoring from `confirmed` games only, wins needed = ⌈Bo/2⌉, final_bo override, `can_next_game()` (false for Bo1 or a decided series)
 - [ ] 5.2 🏆 Report (winner buttons, optional screenshot) → ✅ Confirm / ⚠️ Dispute · `auto_confirm` job
-- [ ] 5.3 🔁 Rematch: same teams / new draft, opponent accepts · `rematch_offer` job
-- [ ] 5.4 ▶ Next game → side choice by loser
+- [ ] 5.3 🔁 Rematch (design §4.1): only while `Playing`, opponent accepts · `rematch_offer` job · voids the current attempt and creates the same `number` with `attempt + 1`. Same teams copies the draft (`draft_source_id`) · new draft restarts at step 1
+- [ ] 5.4 ▶ Next game (Bo3/Bo5 only): creates `number + 1`, `attempt 1` → side choice by the loser · button never rendered in Bo1
 - [ ] 5.5 Match done: advance winner, archive thread, detect round complete → updated bracket + **▶ Start Round N** (admins only)
 - [ ] 5.6 Final → champion post
 
 **Validate**
 - Unit: Bo1/Bo3/Bo5 detection (1-0, 2-0, 2-1, 3-2) · no game after the series is decided · rematch doesn't change the score
+- Unit, rematch vs next game: a rematch keeps `number` and bumps `attempt` · the old attempt is `voided` and excluded from score, ELO, Fearless and stats · same-teams rematch copies all 12 draft actions · `can_next_game()` is false in Bo1, false once a player has the wins needed, and false before the last game is confirmed · the DB rejects a duplicate `(match, number, attempt)` · the example in design §4.1 reproduces score 2–1
 - Manual end-to-end (dev mode, 4 players, Bo3): play to a champion, including 1 dispute, 1 rematch of each type, 1 auto-confirm · a non-admin can't click Start Round 2
+- Manual Bo1 run: a confirmed game ends the match directly, and the panel never shows Next game
 
 ## P6 · Admin tools
 

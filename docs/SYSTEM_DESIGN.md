@@ -136,16 +136,16 @@ stateDiagram-v2
   Drafting --> Paused : admin pause
   Paused --> Drafting : admin resume
   Drafting --> Playing : step 12 locked
-  Playing --> Playing : rematch same teams
-  Playing --> Drafting : rematch new draft
+  Playing --> Playing : Rematch same teams (same game, attempt +1)
+  Playing --> Drafting : Rematch new draft (same game, attempt +1)
   Playing --> Confirming : Report result
   Confirming --> Disputed : opponent disputes
   Confirming --> Decided : confirmed or 10 min
   Disputed --> Decided : admin set-result
-  Disputed --> Playing : admin replay
-  Decided --> BetweenGames : series still open
-  Decided --> Done : series won
-  BetweenGames --> SideChoice : Next game
+  Disputed --> Playing : admin replay (attempt +1)
+  Decided --> BetweenGames : series open (Bo3 or Bo5 only)
+  Decided --> Done : series won (Bo1 always)
+  BetweenGames --> SideChoice : Next game (game +1)
   Done --> [*] : winner advances
 ```
 
@@ -156,8 +156,38 @@ stateDiagram-v2
 | Drafting | 🎯 Make your choice | active player (others get a private "not your turn") |
 | Playing | 🏆 Report result · 🔁 Rematch · 🆘 Call admin | both players |
 | Confirming | ✅ Confirm · ⚠️ Dispute | opponent of reporter |
-| BetweenGames | ▶ Next game · 🆘 Call admin | both players |
+| BetweenGames (Bo3/Bo5 only) | ▶ Next game · 🆘 Call admin | both players |
 | NoShow / Disputed | Give win to X · Extend · DQ both / set-result | admin role |
+
+### 4.1 Rematch vs Next game
+
+The two buttons are separate actions and write different rows, so the series
+score can always be recomputed from the database.
+
+| | 🔁 Rematch | ▶ Next game |
+|---|---|---|
+| Meaning | Replay the **current** game (disconnect, bug) | Start the **next** game of the series |
+| `GAME` row | Same `number`, `attempt + 1`; the old attempt becomes `voided` | `number + 1`, `attempt = 1` |
+| Draft | Same teams → copied (`draft_source_id`) · New draft → restarts at step 1 | Fresh draft |
+| Score | Unchanged | Unchanged until this game is confirmed |
+| When | While `Playing` (before a result is reported); opponent accepts or admin forces | After the previous game is `confirmed` and nobody has the wins needed |
+| Series length | Bo1, Bo3, Bo5 | **Bo3 and Bo5 only**, never in Bo1 |
+| Side | Same sides as the voided attempt | Loser of the previous confirmed game chooses |
+
+Example, Bo3, with one rematch:
+
+| Game | Attempt | Status | Winner | Draft | Score |
+|---|---|---|---|---|---|
+| 1 | 1 | confirmed | Luna | new | 1–0 |
+| 2 | 1 | voided (rematch, same teams) | — | new | 1–0 |
+| 2 | 2 | confirmed | Kai | copied from attempt 1 | 1–1 |
+| 3 | 1 | confirmed | Luna | new | 2–1, match over |
+
+* **Score** = count of `confirmed` games per player. Wins needed =
+  ⌈Bo / 2⌉ (Bo1 → 1, Bo3 → 2, Bo5 → 3).
+* **Voided attempts** never count toward the score, ELO, Fearless or pick/ban stats.
+* A result that's already reported can't be rematched by players. They
+  dispute it, and the admin either sets the result or runs `/admin replay`.
 
 ## 5. Draft
 
@@ -192,7 +222,8 @@ flowchart TB
   ban of phase 2 and the last pick (counter-pick).
 * The order is a config list, `[(side, kind), …]`, so it can be changed without code changes.
 * **Legal choice** = in roster, not banned, not picked by anyone in this game,
-  and (if Fearless) not picked by this player earlier in the series.
+  and (if Fearless) not picked by this player in an earlier **confirmed** game
+  of the series.
 
 ### 5.2 One turn
 
@@ -261,7 +292,7 @@ sequenceDiagram
       Bot->>Ann: Updated bracket image
       Bot->>Adm: ▶ Start Round N
     end
-  else Series continues
+  else Series continues (Bo3 or Bo5 only)
     Bot->>T: Score + ▶ Next game (loser chooses side)
   end
 ```
@@ -318,13 +349,15 @@ erDiagram
   GAME {
     int id PK
     int match_id FK
-    int number
+    int number "1 to Bo"
+    int attempt "1, +1 per rematch"
     bigint side_a_id FK
     bigint winner_id FK
-    string status
+    string status "drafting, playing, reported, confirmed, disputed, voided"
+    string void_reason "rematch_same_teams, rematch_new_draft, admin_replay"
+    int draft_source_id FK "set when teams are copied"
     bigint reported_by
     string screenshot_url
-    int replay_of FK
   }
   DRAFT_ACTION {
     int id PK
@@ -354,6 +387,10 @@ erDiagram
 
 The roster (Aniimo name, element, role, image) lives in `data/roster.csv`, not
 the database. Stats join on `aniimo_slug`.
+
+`GAME` is unique on `(match_id, number, attempt)`, and at most one attempt per
+`number` is not `voided`. The series score, ELO, Fearless and stats read
+`confirmed` games only (§4.1).
 
 ## 8. Timers and restart safety
 
