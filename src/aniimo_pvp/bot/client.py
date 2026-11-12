@@ -13,6 +13,7 @@ from ..db.database import Database, backup_database
 from ..domain.roster import load_roster
 from ..render.board import BoardRenderer
 from ..render.bracket import BracketRenderer
+from ..render.elements import ElementIcons
 from ..render.fonts import Fonts
 from ..render.thumbs import ThumbCache
 from ..services.common import JOB_ARCHIVE
@@ -36,7 +37,8 @@ class AniimoBot(commands.Bot):
         self.settings = settings
         self.fonts = Fonts(settings.paths.fonts_dir)
         self.thumbs = ThumbCache(self.fonts)
-        self.board = BoardRenderer(self.fonts, self.thumbs)
+        self.icons = ElementIcons(settings.paths.elements_dir, self.fonts)
+        self.board = BoardRenderer(self.fonts, self.thumbs, self.icons)
         self.bracket = BracketRenderer(self.fonts)
         self.aniimo_emojis = EmojiStore(self)
         self.ctx: AppContext = None  # type: ignore[assignment]

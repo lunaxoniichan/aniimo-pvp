@@ -99,6 +99,12 @@ class FakeEmojis:
     def get(self, slug):
         return None
 
+    def element_emoji(self, element):
+        return None
+
+    def element_text(self, element):
+        return ""
+
     def url(self, slug):
         return None
 
@@ -107,13 +113,15 @@ class FakeBot:
     def __init__(self, settings):
         from aniimo_pvp.render.board import BoardRenderer
         from aniimo_pvp.render.bracket import BracketRenderer
+        from aniimo_pvp.render.elements import ElementIcons
         from aniimo_pvp.render.fonts import Fonts
         from aniimo_pvp.render.thumbs import ThumbCache
 
         self.settings = settings
         self.fonts = Fonts()
         self.thumbs = ThumbCache(self.fonts)
-        self.board = BoardRenderer(self.fonts, self.thumbs)
+        self.icons = ElementIcons(settings.paths.elements_dir, self.fonts)
+        self.board = BoardRenderer(self.fonts, self.thumbs, self.icons)
         self.bracket = BracketRenderer(self.fonts)
         self.aniimo_emojis = FakeEmojis()
         self.channels: dict[int, FakeChannel] = {}

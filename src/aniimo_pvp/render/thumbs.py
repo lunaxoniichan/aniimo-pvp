@@ -19,6 +19,20 @@ def hex_rgb(h: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def accent_rgb(h: str) -> tuple[int, int, int]:
+    """The element colour, lightened if it is too dark to show up on the dark board (e.g. Wind)."""
+    r, g, b = hex_rgb(h)
+    lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    if lum >= 0.35:
+        return r, g, b
+    k = 0.45
+    return round(r + (255 - r) * k), round(g + (255 - g) * k), round(b + (255 - b) * k)
+
+
+def mix_rgb(fg: tuple[int, int, int], bg: tuple[int, int, int], alpha: float) -> tuple[int, int, int]:
+    return tuple(round(fg[i] * alpha + bg[i] * (1 - alpha)) for i in range(3))  # type: ignore[return-value]
+
+
 def circle_mask(size: int) -> Image.Image:
     big = Image.new("L", (size * SS, size * SS), 0)
     ImageDraw.Draw(big).ellipse((0, 0, size * SS - 1, size * SS - 1), fill=255)
@@ -42,13 +56,18 @@ class ThumbCache:
         return img
 
     def _make(self, a: Aniimo, size: int, banned: bool) -> Image.Image:
-        base = self._load(a.image_path, size) if a.image_path else None
-        if base is None:
+        art = self._load(a.image_path, size) if a.image_path else None
+        if art is None:
             base = self.placeholder(a, size)
         else:
+            accent = accent_rgb(a.color)
+            # a soft tint of the element colour behind the (usually transparent) art, so it pops on dark panels
+            disc = Image.new("RGBA", (size, size), (*mix_rgb(accent, (21, 25, 49), 0.30), 255))
+            disc.alpha_composite(art)
+            base = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            base.paste(disc, (0, 0), circle_mask(size))
             ring = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-            d = ImageDraw.Draw(ring)
-            d.ellipse((0, 0, size - 1, size - 1), outline=(*hex_rgb(a.color), 255), width=max(2, size // 28))
+            ImageDraw.Draw(ring).ellipse((0, 0, size - 1, size - 1), outline=(*accent, 255), width=max(2, size // 28))
             base = Image.alpha_composite(base, ring)
         if banned:
             gray = ImageOps.grayscale(base.convert("RGB")).convert("RGBA")
@@ -58,18 +77,17 @@ class ThumbCache:
         return base
 
     def _load(self, path: Path, size: int) -> Image.Image | None:
+        """The art scaled to fit inside the circle with a little margin (whole creature visible)."""
         try:
             with Image.open(path) as im:
                 im = ImageOps.exif_transpose(im).convert("RGBA")
-                im = ImageOps.fit(im, (size, size), Image.Resampling.LANCZOS)
+                inner = round(size * 0.92)
+                im = ImageOps.contain(im, (inner, inner), Image.Resampling.LANCZOS)
         except Exception as e:
             log.warning("Can't read thumbnail %s: %s", path, e)
             return None
         out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        out.paste(im, (0, 0), circle_mask(size))
-        # keep the image's own transparency inside the circle
-        alpha = Image.composite(im.getchannel("A"), Image.new("L", (size, size), 0), circle_mask(size))
-        out.putalpha(alpha)
+        out.paste(im, ((size - im.width) // 2, (size - im.height) // 2))
         return out
 
     def placeholder(self, a: Aniimo, size: int) -> Image.Image:

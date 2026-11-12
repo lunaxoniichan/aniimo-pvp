@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from ...domain.roster import ELEMENT_EMOJI, Aniimo
+from ...domain.roster import Aniimo
 from ...services.drafts import TurnOptions
 from ...services.errors import UserError
 from ..util import KIND_LABEL, rel
@@ -36,14 +36,14 @@ class PickerView(discord.ui.View):
         self.bot, self.opts = bot, opts
         self.element, self.selected, self.search, self.query, self.page = element, selected, search, query, page
         avail = opts.available
-        elements = [el for el in bot.ctx.roster.elements() if any(a.element == el for a in avail)]
+        elements = [el for el in bot.ctx.roster.elements() if any(el in a.elements for a in avail)]
         el_options = [
             discord.SelectOption(
                 label=el,
                 value=el,
-                emoji=ELEMENT_EMOJI.get(el),
+                emoji=bot.aniimo_emojis.element_emoji(el),
                 default=el == element,
-                description=f"{sum(1 for a in avail if a.element == el)} available",
+                description=f"{sum(1 for a in avail if el in a.elements)} available",
             )
             for el in elements[:25]
         ]
@@ -59,8 +59,8 @@ class PickerView(discord.ui.View):
                     label=a.name,
                     value=a.slug,
                     default=a.slug == selected,
-                    description=(a.element + (f" · {a.role}" if a.role else ""))[:100],
-                    emoji=bot.aniimo_emojis.get(a.slug) or ELEMENT_EMOJI.get(a.element),
+                    description=(a.element_label + (f" · {a.role}" if a.role else ""))[:100],
+                    emoji=bot.aniimo_emojis.get(a.slug) or bot.aniimo_emojis.element_emoji(a.element),
                 )
                 for a in chunk
             ]
@@ -106,7 +106,7 @@ class PickerView(discord.ui.View):
             wanted = set(self.search)
             return [a for a in avail if a.slug in wanted]
         if self.element:
-            return [a for a in avail if a.element == self.element]
+            return [a for a in avail if self.element in a.elements]
         return []
 
     def render(self) -> tuple[discord.Embed, list[discord.File]]:
@@ -133,7 +133,8 @@ class PickerView(discord.ui.View):
         if chosen:
             e.colour = discord.Colour(int(chosen.color.lstrip("#"), 16))
             e.title = chosen.name
-            e.add_field(name="Element", value=f"{ELEMENT_EMOJI.get(chosen.element, '')} {chosen.element}")
+            signs = " ".join(f"{self.bot.aniimo_emojis.element_text(el)} {el}".strip() for el in chosen.elements)
+            e.add_field(name="Element" if len(chosen.elements) == 1 else "Elements", value=signs)
             if chosen.role:
                 e.add_field(name="Role", value=chosen.role)
             e.set_footer(text="Selected. Click Lock in to confirm.")

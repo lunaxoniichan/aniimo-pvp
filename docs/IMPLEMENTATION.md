@@ -31,6 +31,7 @@ All phases P1–P8 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified wit
 | Rendering | Board in every state + bracket at 7 and 128 players, checked by eye against the approved mockups |
 | Discord layer | Whole tournaments driven through the real notifier and button handlers with fake Discord objects; every slash command payload validated offline |
 | Packaging | Fresh clone → install → `init` → `check` → `preview` → test suite |
+| Assets | `fetch-assets` run against the live official wiki: 120 Aniimo, 120 thumbnails, 9 element icons; offline tests cover parsing, host restrictions, image validation and roster safety |
 
 Still needs the live server (your token and IDs): run P0, then the manual checks below on a test
 server. Dev mode lets one admin play both sides of a match.

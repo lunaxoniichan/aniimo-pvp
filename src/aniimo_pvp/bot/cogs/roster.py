@@ -35,6 +35,7 @@ class RosterCog(commands.GroupCog, group_name="roster", group_description="Aniim
             return
         self.bot.ctx.roster = roster
         self.bot.thumbs.clear()
+        self.bot.icons.clear()
         with_img = sum(1 for a in roster.items if a.image_path)
         text = f"Reloaded {len(roster)} Aniimo ({with_img} with thumbnails). Emoji sync is running in the background."
         if warnings:

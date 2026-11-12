@@ -12,28 +12,69 @@ from pathlib import Path
 from .config import ConfigError, Settings, load_settings
 from .domain.roster import RosterError, load_roster
 
-ROOT = Path.cwd()
 
-
-def cmd_init(_args) -> int:
+def cmd_init(args) -> int:
     created = []
     for src, dest in (
         ("config.example.yaml", "config.yaml"),
         (".env.example", ".env"),
         ("data/roster.example.csv", "data/roster.csv"),
     ):
-        s, d = ROOT / src, ROOT / dest
+        s, d = Path.cwd() / src, Path.cwd() / dest
         if s.exists() and not d.exists():
             d.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(s, d)
             created.append(dest)
     print("Created: " + ", ".join(created) if created else "Nothing to create (files already exist).")
+    if not getattr(args, "no_assets", False):
+        print("\nDownloading the Aniimo roster, thumbnails and element icons from the official wiki ...")
+        fetch_args = argparse.Namespace(config=args.config, env=args.env, refresh=False, overwrite_roster=False)
+        if cmd_fetch_assets(fetch_args) != 0:
+            print(
+                "! Couldn't finish the download (no internet?). Run `aniimo-pvp fetch-assets` later; until then the "
+                "example roster is used."
+            )
     print("Next: put your bot token in .env, fill the IDs in config.yaml, then run: aniimo-pvp check")
     return 0
 
 
 def _load(args) -> Settings:
     return load_settings(args.config, args.env)
+
+
+def _settings_or_default(args) -> Settings:
+    try:
+        return _load(args)
+    except ConfigError:
+        return Settings().resolve(Path.cwd())
+
+
+def cmd_fetch_assets(args) -> int:
+    from .wiki import WikiError, fetch_assets
+
+    settings = _settings_or_default(args)
+    p = settings.paths
+    try:
+        report = fetch_assets(
+            p.roster_csv, p.images_dir, p.elements_dir, refresh=args.refresh, overwrite_roster=args.overwrite_roster
+        )
+    except WikiError as e:
+        print(f"✗ Couldn't get the Aniimo list from the wiki: {e}")
+        return 1
+    print(
+        f"\n✓ {report.aniimo} Aniimo: {report.downloaded} thumbnails downloaded, {report.already_had} already had",
+        end="",
+    )
+    print(f" ({report.from_full_art} from full art)" if report.from_full_art else "")
+    print(f"✓ Element icons: {report.element_icons}/9" if report.element_icons else "! Element icons were not updated")
+    if report.roster_path:
+        print(f"✓ Roster: {report.roster_path} ({report.roster_note})")
+    for w in report.warnings:
+        print(f"  ! {w}")
+    for f in report.failed:
+        print(f"  ✗ {f}")
+    print("Thumbnails and icons are saved in assets/ (not part of the git repo). Run `check` or `preview` next.")
+    return 1 if report.failed else 0
 
 
 def cmd_check(args) -> int:
@@ -51,8 +92,21 @@ def cmd_check(args) -> int:
         roster, warnings = load_roster(settings.paths.roster_csv, settings.paths.images_dir)
         with_img = sum(1 for a in roster.items if a.image_path)
         print(f"✓ Roster: {len(roster)} Aniimo, {with_img} with thumbnails, elements: {', '.join(roster.elements())}")
-        for w in warnings:
+        for w in warnings[:10]:
             print(f"  ! {w}")
+        if len(warnings) > 10:
+            print(f"  ! ...and {len(warnings) - 10} more")
+        if with_img < len(roster):
+            print("  ! Some thumbnails are missing. Run `aniimo-pvp fetch-assets` to download them from the wiki.")
+        icons = sum(1 for e in roster.elements() if (Path(settings.paths.elements_dir) / f"{e.lower()}.png").is_file())
+        print(
+            f"{'✓' if icons == len(roster.elements()) else '!'} Element icons: {icons}/{len(roster.elements())}"
+            + (
+                ""
+                if icons == len(roster.elements())
+                else " (run `aniimo-pvp fetch-assets`; simple badges are used meanwhile)"
+            )
+        )
     except RosterError as e:
         print(f"✗ Roster: {e}")
         ok = False
@@ -69,6 +123,7 @@ async def _preview(settings: Settings, out: Path) -> list[Path]:
     from .db.database import Database
     from .render.board import BoardRenderer
     from .render.bracket import BracketRenderer
+    from .render.elements import ElementIcons
     from .render.fonts import Fonts
     from .render.thumbs import ThumbCache
     from .services.common import current_game, draft_rows, to_state
@@ -82,7 +137,8 @@ async def _preview(settings: Settings, out: Path) -> list[Path]:
     await db.create_all()
     ctx = build_context(s, db, roster, RecordingNotifier(), clock=FakeClock(), rng=random.Random(3))
     fonts = Fonts(settings.paths.fonts_dir)
-    board, bracket = BoardRenderer(fonts, ThumbCache(fonts)), BracketRenderer(fonts)
+    board = BoardRenderer(fonts, ThumbCache(fonts), ElementIcons(settings.paths.elements_dir, fonts))
+    bracket = BracketRenderer(fonts)
     t = await ctx.tournaments.create(1, "Preview Cup", 1)
     names = ["Luna", "Kai", "Mio", "Rex", "Aya", "Tomo", "Zed"]
     csv = "\n".join(f"{i + 1},{100000 + i},{n}" for i, n in enumerate(names))
@@ -124,7 +180,7 @@ def cmd_preview(args) -> int:
     try:
         settings = _load(args)
     except ConfigError:
-        settings = Settings().resolve(ROOT)
+        settings = Settings().resolve(Path.cwd())
     try:
         files = asyncio.run(_preview(settings, Path(args.out)))
     except RosterError as e:
@@ -167,9 +223,15 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("check", help="validate config.yaml, .env and the roster without connecting")
     pv = sub.add_parser("preview", help="render sample board + bracket images with your roster")
     pv.add_argument("--out", default="preview")
-    sub.add_parser("init", help="create config.yaml, .env and data/roster.csv from the examples")
+    ini = sub.add_parser("init", help="create config.yaml, .env and data/roster.csv, then download the assets")
+    ini.add_argument("--no-assets", action="store_true", help="skip the download from the official wiki")
+    fa = sub.add_parser("fetch-assets", help="download the Aniimo roster, thumbnails and element icons from the wiki")
+    fa.add_argument("--refresh", action="store_true", help="download every thumbnail again")
+    fa.add_argument("--overwrite-roster", action="store_true", help="replace data/roster.csv (a backup is kept)")
     args = parser.parse_args(argv)
-    handler = {"check": cmd_check, "preview": cmd_preview, "init": cmd_init}.get(args.cmd or "run", cmd_run)
+    handler = {"check": cmd_check, "preview": cmd_preview, "init": cmd_init, "fetch-assets": cmd_fetch_assets}.get(
+        args.cmd or "run", cmd_run
+    )
     return handler(args)
 
 

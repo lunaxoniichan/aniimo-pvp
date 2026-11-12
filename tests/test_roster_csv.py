@@ -100,3 +100,30 @@ def test_example_roster_loads_and_comments_are_skipped():
     root = Path(__file__).resolve().parents[1]
     roster, warnings = load_roster(root / "data" / "roster.example.csv", root / "assets" / "aniimo")
     assert len(roster) == 18 and len(roster.elements()) == 9 and not warnings
+
+
+def test_dual_element_aniimo(tmp_path):
+    from aniimo_pvp.domain.roster import ELEMENT_COLORS, parse_elements
+
+    assert parse_elements("Fire/Dark") == ("Fire", "Dark")
+    assert parse_elements(" rock , water ") == ("Rock", "Water")
+    assert parse_elements("Fire/Fire/Ice/Dark") == ("Fire", "Ice")  # duplicates dropped, max two
+    assert parse_elements("") == ()
+    p = write(tmp_path, "name,element\nInferlupa,Fire/Dark\nReefish,Rock/Water\nEmberpup,Fire\n")
+    roster, warnings = load_roster(p, tmp_path)
+    inf = roster.get("inferlupa")
+    assert inf.elements == ("Fire", "Dark") and inf.element == "Fire" and inf.element_label == "Fire / Dark"
+    assert inf.color == ELEMENT_COLORS["Fire"]
+    assert {a.name for a in roster.in_element("Dark")} == {"Inferlupa"}  # listed under both of its elements
+    assert {a.name for a in roster.in_element("Fire")} == {"Inferlupa", "Emberpup"}
+    assert roster.elements() == ["Fire", "Water", "Rock", "Dark"] and not warnings
+    bad = write(tmp_path, "name,element\nZed,Fire/Cosmic\n")
+    assert any("Cosmic" in w for w in load_roster(bad, tmp_path)[1])
+
+
+def test_roster_image_name_cannot_escape_the_images_folder(tmp_path):
+    (tmp_path / "secret.png").write_bytes(b"x")
+    (tmp_path / "img").mkdir()
+    p = write(tmp_path, "name,element,image\nZed,Fire,../secret.png\n")
+    roster, warnings = load_roster(p, tmp_path / "img")
+    assert roster.get("zed").image_path is None and warnings

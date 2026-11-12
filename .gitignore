@@ -231,3 +231,7 @@ assets/aniimo/*
 assets/elements/*
 !assets/elements/.gitkeep
 tests/output/
+data/roster.csv
+data/roster.wiki.csv
+data/roster.csv.bak-*
+preview/

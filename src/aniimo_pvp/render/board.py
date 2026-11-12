@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 
 from ..domain.formats import round_name
 from ..services.views import MatchView, SlotView, StepView
+from .elements import ElementIcons
 from .fonts import Fonts
 from .thumbs import ThumbCache, hex_rgb
 
@@ -37,9 +38,10 @@ def blend(fg: str, bg: str, alpha: float) -> tuple[int, int, int]:
 
 
 class BoardRenderer:
-    def __init__(self, fonts: Fonts | None = None, thumbs: ThumbCache | None = None):
+    def __init__(self, fonts: Fonts | None = None, thumbs: ThumbCache | None = None, icons: ElementIcons | None = None):
         self.fonts = fonts or Fonts()
         self.thumbs = thumbs or ThumbCache(self.fonts)
+        self.icons = icons or ElementIcons("assets/elements", self.fonts)
 
     # ---------- helpers ----------
     def fit(self, text: str, font, max_w: int) -> str:
@@ -231,9 +233,19 @@ class BoardRenderer:
             d.text(
                 (tx, ty + size / 2 - 4), self.fit(slot.aniimo.name, f_name, max_w), font=f_name, fill=TEXT, anchor="ls"
             )
-            dot_y = ty + size / 2 + 14
-            d.ellipse((tx, dot_y - 5, tx + 9, dot_y + 4), fill=slot.aniimo.color)
-            d.text((tx + 16, dot_y), slot.aniimo.element, font=self.fonts.inter(13), fill=SOFT, anchor="lm")
+            icon_y = ty + size / 2 + 14
+            ix = tx
+            for el in slot.aniimo.elements:  # element signs, e.g. a flame and a moon for Fire / Dark
+                icon = self.icons.get(el, 22)
+                img.alpha_composite(icon, (round(ix), round(icon_y - icon.height / 2)))
+                ix += icon.width + 4
+            f_el = self.fonts.inter(13)
+            if len(slot.aniimo.elements) == 1:
+                label = self.fit(slot.aniimo.element_label, f_el, max(20, x1 - ix - 16))
+                d.text((ix + 4, icon_y), label, font=f_el, fill=SOFT, anchor="lm")
+            else:  # two signs leave no room beside them: the names go on the next line
+                label = self.fit(slot.aniimo.element_label, self.fonts.inter(12), x1 - tx - 12)
+                d.text((tx, icon_y + 21), label, font=self.fonts.inter(12), fill=SOFT, anchor="lm")
         elif slot.state == "done":
             d.text((x0 + 16, inner_top + 18), "Skipped", font=self.fonts.inter(14), fill=FAINT, anchor="la")
         elif slot.state == "active":

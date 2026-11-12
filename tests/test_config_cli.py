@@ -54,3 +54,69 @@ def test_cli_check_and_preview(tmp_path, monkeypatch, capsys):
     assert main(["check"]) == 0
     assert main(["preview", "--out", str(tmp_path / "pv")]) == 0
     assert {p.name for p in (tmp_path / "pv").iterdir()} == {"board_mid_draft.png", "board_complete.png", "bracket.png"}
+
+
+def test_cli_fetch_assets_reports_and_exit_codes(tmp_path, monkeypatch, capsys):
+    from aniimo_pvp import wiki
+
+    monkeypatch.chdir(tmp_path)
+    seen = {}
+
+    def fake_ok(roster_csv, images_dir, elements_dir, **kw):
+        seen.update(kw, roster=str(roster_csv), images=str(images_dir), elements=str(elements_dir))
+        return wiki.FetchReport(
+            aniimo=120,
+            downloaded=118,
+            already_had=2,
+            from_full_art=3,
+            element_icons=9,
+            roster_path=tmp_path / "data" / "roster.csv",
+            roster_note="written",
+        )
+
+    monkeypatch.setattr(wiki, "fetch_assets", fake_ok)
+    assert main(["fetch-assets", "--refresh"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "120 Aniimo: 118 thumbnails downloaded, 2 already had (3 from full art)" in out and "Element icons: 9/9" in out
+    )
+    assert seen["refresh"] is True and seen["overwrite_roster"] is False
+    assert seen["images"].endswith("assets/aniimo") and seen["elements"].endswith("assets/elements")
+
+    def fake_fail(*a, **kw):
+        raise wiki.WikiError("no network")
+
+    monkeypatch.setattr(wiki, "fetch_assets", fake_fail)
+    assert main(["fetch-assets"]) == 1
+    assert "no network" in capsys.readouterr().out
+
+    def fake_partial(*a, **kw):
+        return wiki.FetchReport(aniimo=2, downloaded=1, failed=["zed (no usable image)"])
+
+    monkeypatch.setattr(wiki, "fetch_assets", fake_partial)
+    assert main(["fetch-assets"]) == 1  # some thumbnails failed: non-zero so scripts notice
+    assert "zed (no usable image)" in capsys.readouterr().out
+
+
+def test_cli_init_downloads_assets_but_survives_a_failure(tmp_path, monkeypatch, capsys):
+    from aniimo_pvp import wiki
+
+    monkeypatch.chdir(tmp_path)
+    for name in ("config.example.yaml", ".env.example"):
+        (tmp_path / name).write_text("x: 1\n")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "roster.example.csv").write_text("name,element\nA,Fire\n")
+    calls = []
+
+    def fake_fail(*a, **kw):
+        calls.append(1)
+        raise wiki.WikiError("offline")
+
+    monkeypatch.setattr(wiki, "fetch_assets", fake_fail)
+    assert main(["init"]) == 0
+    out = capsys.readouterr().out
+    assert calls and "Run `aniimo-pvp fetch-assets` later" in out
+    assert (tmp_path / "config.yaml").exists() and (tmp_path / "data" / "roster.csv").exists()
+    calls.clear()
+    assert main(["init", "--no-assets"]) == 0
+    assert not calls

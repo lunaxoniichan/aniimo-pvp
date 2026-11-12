@@ -9,16 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ELEMENTS = ("Fire", "Water", "Grass", "Ice", "Electric", "Rock", "Wind", "Holy", "Dark")
-ELEMENT_COLORS = {
-    "Fire": "#F26B3A",
-    "Water": "#3D8BFD",
-    "Grass": "#3DBE6B",
-    "Ice": "#7FD8F0",
-    "Electric": "#F5C531",
-    "Rock": "#B08D6A",
-    "Wind": "#8FD3B6",
-    "Holy": "#F3E3A2",
-    "Dark": "#8B5CF6",
+ELEMENT_COLORS = {  # the colours the official wiki uses for each element
+    "Fire": "#E26161",
+    "Water": "#529DE7",
+    "Grass": "#51B17A",
+    "Ice": "#45C1D6",
+    "Electric": "#E0C21A",
+    "Rock": "#BEA77B",
+    "Wind": "#2A52BE",
+    "Holy": "#F6A93C",
+    "Dark": "#A373D2",
 }
 ELEMENT_EMOJI = {
     "Fire": "🔥",
@@ -47,9 +47,18 @@ def slugify(name: str) -> str:
 class Aniimo:
     slug: str
     name: str
-    element: str
+    elements: tuple[str, ...]  # one or two, e.g. ("Fire", "Dark")
     role: str
     image_path: Path | None
+
+    @property
+    def element(self) -> str:
+        """The primary (first) element."""
+        return self.elements[0]
+
+    @property
+    def element_label(self) -> str:
+        return " / ".join(self.elements)
 
     @property
     def color(self) -> str:
@@ -83,12 +92,13 @@ class Roster:
         return a.name if a else "—"
 
     def elements(self) -> list[str]:
-        present = {a.element for a in self.items}
+        present = {e for a in self.items for e in a.elements}
         known = [e for e in ELEMENTS if e in present]
         return known + sorted(present - set(ELEMENTS))
 
     def in_element(self, element: str) -> list[Aniimo]:
-        return [a for a in self.items if a.element == element]
+        """Everything with this element, including dual-element Aniimo."""
+        return [a for a in self.items if element in a.elements]
 
     def search(self, query: str, limit: int = 25) -> list[Aniimo]:
         q = query.strip().lower()
@@ -104,12 +114,25 @@ class Roster:
         return found[:limit]
 
 
+_SPLIT_RE = re.compile(r"\s*[/,+&|]\s*")
+
+
 def _norm_element(value: str) -> str:
     v = value.strip()
     for e in ELEMENTS:
         if e.lower() == v.lower():
             return e
     return v.title()
+
+
+def parse_elements(cell: str) -> tuple[str, ...]:
+    """'Fire/Dark' -> ('Fire', 'Dark'). Duplicates are dropped; at most two elements are kept."""
+    out: list[str] = []
+    for part in _SPLIT_RE.split(cell.strip()):
+        el = _norm_element(part) if part else ""
+        if el and el not in out:
+            out.append(el)
+    return tuple(out[:2])
 
 
 def load_roster(csv_path: str | Path, images_dir: str | Path) -> tuple[Roster, list[str]]:
@@ -141,18 +164,19 @@ def load_roster(csv_path: str | Path, images_dir: str | Path) -> tuple[Roster, l
             if slug in seen:
                 raise RosterError(f"{csv_path}:{line_no}: duplicate slug {slug!r} (first on line {seen[slug]})")
             seen[slug] = line_no
-            element = _norm_element(row.get("element", ""))
-            if not element:
+            elements = parse_elements(row.get("element", ""))
+            if not elements:
                 raise RosterError(f"{csv_path}:{line_no}: element is empty for {name}")
-            if element not in ELEMENTS:
-                warnings.append(f"line {line_no}: unknown element {element!r} for {name} (shown in grey)")
-            image_name = row.get("image") or f"{slug}.png"
+            for el in elements:
+                if el not in ELEMENTS:
+                    warnings.append(f"line {line_no}: unknown element {el!r} for {name} (shown in grey)")
+            image_name = Path(row.get("image") or f"{slug}.png").name  # a plain file name inside images_dir
             image_path = images_dir / image_name
             if not image_path.is_file():
                 if row.get("image"):
                     warnings.append(f"line {line_no}: image {image_name} not found, using a placeholder")
                 image_path = None
-            items.append(Aniimo(slug, name, element, row.get("role", ""), image_path))
+            items.append(Aniimo(slug, name, elements, row.get("role", ""), image_path))
     if not items:
         raise RosterError(f"{csv_path} has no Aniimo rows")
     return Roster(items), warnings

@@ -10,6 +10,7 @@ the bracket and posts a draft-board image with the Aniimo thumbnails after every
 - **Match rooms**: a private thread per match with the players' Aniimo UIDs, a ready check,
   a coin flip, Report / Confirm / Dispute, Rematch, and Next game (Bo3/Bo5).
 - **Admin tools**: undo, pause, set result, award, replay, disqualify, swap and extend.
+- **Real thumbnails and element signs** downloaded from the official wiki with one command.
 - **Extras**: a live draft feed, pick/ban stats, an optional Fearless mode, and a rating leaderboard.
 
 Design docs: [system design](docs/SYSTEM_DESIGN.md) · [implementation plan](docs/IMPLEMENTATION.md) ·
@@ -21,10 +22,10 @@ Design docs: [system design](docs/SYSTEM_DESIGN.md) · [implementation plan](doc
 
 1. Install **Python 3.11+** (Windows: from python.org, tick "Add to PATH").
 2. Do the [Discord setup](#discord-setup) below, which takes about 10 minutes.
-3. Run `run.bat` (Windows) or `./run.sh` (macOS/Linux). The first run creates `config.yaml`,
-   `.env` and `data/roster.csv`, then stops.
-4. Put your bot token in `.env`, fill in the IDs in `config.yaml`, and replace the example roster
-   (see [Roster and thumbnails](#roster-and-thumbnails)).
+3. Run `run.bat` (Windows) or `./run.sh` (macOS/Linux). The first run creates `config.yaml`, `.env` and
+   `data/roster.csv`, **downloads the Aniimo roster, thumbnails and element icons** from the official wiki
+   (about 20 seconds, 120 Aniimo), then stops.
+4. Put your bot token in `.env` and fill in the IDs in `config.yaml`.
 5. Run `run.bat check` / `./run.sh check` until everything is ✓, then `run.bat` / `./run.sh` to start.
 
 The bot only makes outbound connections to Discord, so you don't need port forwarding or a
@@ -71,18 +72,40 @@ public address. Keep the PC running during the tournament.
 
 ## Roster and thumbnails
 
-- `data/roster.csv` has the columns `slug,name,element,role,image`. Only `name` and `element` are required.
-  - The elements are Fire, Water, Grass, Ice, Electric, Rock, Wind, Holy and Dark.
-  - Lines starting with `#` are comments.
-  - The shipped list is **placeholder names**: replace it with the real roster.
-- Put the thumbnails in `assets/aniimo/`, square PNGs of at least 128×128.
-  - By default the file is `<slug>.png`; set `image` to use another file name.
-  - Any Aniimo without an image gets a coloured badge with its initials.
-- To check your thumbnails offline, run `run.bat preview` / `./run.sh preview`. It renders sample
-  boards and a bracket with your roster into `preview/`.
-- While the bot runs, `/roster reload` re-reads the file and images, and `/roster info` lists missing thumbnails.
+The roster, the thumbnails and the nine element icons come from the **official Aniimo wiki**
+(<https://wiki.aniimo.com/>). One command downloads them to your PC:
 
-Official Aniimo art belongs to its publisher, so `assets/aniimo/` is git-ignored. Use images you're allowed to use.
+```
+run.bat fetch-assets        # Windows
+./run.sh fetch-assets       # macOS / Linux
+```
+
+- It writes `data/roster.csv` (name, element, role), `assets/aniimo/<slug>.png` (a square thumbnail per Aniimo)
+  and `assets/elements/<element>.png` (the element signs, in the wiki's colours). The first run does this for you.
+- It only talks to `wiki.aniimo.com` and the wiki's own image servers, checks every file, and re-saves it as a
+  plain PNG. Files you already have are skipped, so re-running is quick.
+- **Run it again when new Aniimo are added.** `--refresh` downloads every thumbnail again.
+- Your edits are safe. If `data/roster.csv` already exists and you changed it, the new list is saved as
+  `data/roster.wiki.csv` instead. Use `--overwrite-roster` to replace yours (a backup is kept).
+- The wiki lists every evolution stage as its own Aniimo, so the list has 120 entries. **Delete a row** from
+  `data/roster.csv` to take an Aniimo out of the draft pool.
+- Aniimo with two elements, like Fire/Dark, appear under both elements in the picker, with both signs on the board.
+
+The picker shows each Aniimo's thumbnail and each element's sign as menu icons. The bot uploads them as its own
+emojis the first time it connects (no server boost needed), and `/roster info` shows how that went.
+
+Other things to know:
+
+- `data/roster.csv` has the columns `slug,name,element,role,image`. Only `name` and `element` are required.
+  Lines starting with `#` are comments, and two elements are written like `Fire/Dark`.
+- To use your own picture, put a PNG in `assets/aniimo/` named `<slug>.png`, or set the `image` column.
+  Any Aniimo without an image gets a coloured badge with its initials. The same goes for an element sign:
+  a file in `assets/elements/` overrides the downloaded one.
+- To check how everything looks without Discord, run `run.bat preview` / `./run.sh preview`. It renders a sample
+  board and bracket with your roster into `preview/`.
+- While the bot runs, `/roster reload` re-reads the file and images.
+- The Aniimo art belongs to its publisher. The images are downloaded to your own PC for your tournaments and are
+  not part of this repository (`assets/` is git-ignored). Please don't commit or redistribute them.
 
 ## Running a tournament (admins)
 
@@ -179,7 +202,8 @@ To test the timers quickly, set short values in `timers:`, e.g. `draft_step_seco
 | Pasting the CSV does nothing | Turn on Message Content Intent; paste in `#admin` as someone with the admin role. |
 | "Couldn't create a private thread" | Give the bot Create Private Threads + Send Messages in Threads in `#matches`. |
 | Admins can't see match threads | Give the admin role Manage Threads in `#matches`. |
-| Menus show element icons instead of Aniimo icons | The emoji upload is still running or failed; see `/roster info` and the log. |
+| No thumbnails, or `fetch-assets` fails | Check your internet connection and run `fetch-assets` again. If the wiki's page layout changed, it says so and the bot keeps using coloured badges. |
+| Menus show plain emojis instead of Aniimo icons | The emoji upload is still running or failed; see `/roster info` and the log. |
 
 ## Development
 
@@ -191,5 +215,5 @@ ruff check src tests
 ```
 
 - **Layout:** `src/aniimo_pvp/` contains `domain/` (pure rules), `services/` (use cases + timers),
-  `render/` (Pillow images) and `bot/` (discord.py).
+  `render/` (Pillow images), `bot/` (discord.py) and `wiki.py` (the `fetch-assets` downloader).
 - **Fonts:** Inter and Space Grotesk ship under the SIL Open Font License (`assets/fonts/`).

@@ -466,11 +466,17 @@ Bot setup: Message Content intent (to read pasted CSV). Permissions: View
 Channels, Send Messages, Send in Threads, Create Private Threads, Manage
 Threads, Embed Links, Attach Files, Read History, Mention roles.
 
-## 10. Roster and thumbnails
+## 10. Roster, thumbnails and element icons
 
-* `data/roster.csv`: `slug,name,element,role,image`. Images go in
-  `assets/aniimo/` (git-ignored, because the art belongs to the publisher).
-* On startup and `/roster reload`, the bot validates the file and uploads new or
-  changed images as **application emojis** (up to 2000 per bot, no server boost).
-  It compares content hashes to skip unchanged images.
-* Menus show the emoji icon and board images use the full PNG.
+* **Source:** the official wiki (`wiki.aniimo.com`). `aniimo-pvp fetch-assets` reads the creature index from the
+  page's embedded data, downloads each thumbnail (the small square head icon, or the full art as a fallback) and the
+  wiki's element sprite, validates every file with Pillow and re-saves it as a plain PNG. Only the wiki's own hosts
+  are allowed, also across redirects. Nothing is committed: `assets/` and the generated roster are git-ignored.
+* `data/roster.csv`: `slug,name,element,role,image`. Two elements are written `Fire/Dark`; such an Aniimo is listed
+  under both elements in the picker. A hand-edited roster is never overwritten by accident.
+* `assets/aniimo/<slug>.png` are the thumbnails and `assets/elements/<element>.png` the nine element signs
+  (a coloured disc with the wiki's glyph, in the wiki's colours). A missing file falls back to an initials badge or a
+  generated element badge.
+* On startup and `/roster reload`, the bot uploads the thumbnails and the element icons as **application emojis**
+  (up to 2000 per bot, no server boost) and skips unchanged images by content hash. Menus show these icons, and
+  board images use the full PNGs with a tinted backdrop behind transparent art.
