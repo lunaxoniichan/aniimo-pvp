@@ -214,7 +214,7 @@ def cmd_run(args) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aniimo-pvp", description="Aniimo 1v1 draft tournament bot")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--env", default=".env")
@@ -228,7 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     fa = sub.add_parser("fetch-assets", help="download the Aniimo roster, thumbnails and element icons from the wiki")
     fa.add_argument("--refresh", action="store_true", help="download every thumbnail again")
     fa.add_argument("--overwrite-roster", action="store_true", help="replace data/roster.csv (a backup is kept)")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     handler = {"check": cmd_check, "preview": cmd_preview, "init": cmd_init, "fetch-assets": cmd_fetch_assets}.get(
         args.cmd or "run", cmd_run
     )

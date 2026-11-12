@@ -22,13 +22,61 @@ Design docs: [system design](docs/SYSTEM_DESIGN.md) · [implementation plan](doc
 
 ## Quick start
 
-1. Install **Python 3.11+** (Windows: from python.org, tick "Add to PATH").
+Want a guided walk-through with what to expect at every step? Use the [testing guide](docs/TESTING.md).
+The short version:
+
+1. Install **Python 3.11+** (Windows: from python.org, tick "Add Python to PATH").
 2. Do the [Discord setup](#discord-setup) below, which takes about 10 minutes.
-3. Run `run.bat` (Windows) or `./run.sh` (macOS/Linux). The first run creates `config.yaml`, `.env` and
-   `data/roster.csv`, **downloads the Aniimo roster, thumbnails and element icons** from the official wiki
-   (about 20 seconds, 120 Aniimo), then stops.
-4. Put your bot token in `.env` and fill in the IDs in `config.yaml`.
-5. Run `run.bat check` / `./run.sh check` until everything is ✓, then `run.bat` / `./run.sh` to start.
+3. Open a terminal in the project folder and run the first start. It installs everything, creates `config.yaml`,
+   `.env` and `data/roster.csv`, **downloads the Aniimo roster, thumbnails and element icons** from the official
+   wiki (about 20 seconds, 120 Aniimo), then stops on purpose.
+
+   **Windows** (Command Prompt or PowerShell)
+
+   ```
+   .\run.bat
+   ```
+
+   **macOS / Linux**
+
+   ```
+   ./run.sh
+   ```
+
+4. Put your bot token in `.env` (one line, no quotes):
+
+   ```
+   DISCORD_TOKEN=PASTE_YOUR_TOKEN_HERE
+   ```
+
+   Then fill in the IDs in `config.yaml` (each setting has a comment explaining it).
+5. Check your settings. Fix anything marked ✗ and run it again until it says `All good`:
+
+   **Windows**
+
+   ```
+   .\run.bat check
+   ```
+
+   **macOS / Linux**
+
+   ```
+   ./run.sh check
+   ```
+
+6. Start the bot (leave the window open; `Ctrl+C` stops it):
+
+   **Windows**
+
+   ```
+   .\run.bat
+   ```
+
+   **macOS / Linux**
+
+   ```
+   ./run.sh
+   ```
 
 The bot only makes outbound connections to Discord, so you don't need port forwarding or a
 public address. Keep the PC running during the tournament.
@@ -77,9 +125,16 @@ public address. Keep the PC running during the tournament.
 The roster, the thumbnails and the nine element icons come from the **official Aniimo wiki**
 (<https://wiki.aniimo.com/>). One command downloads them to your PC:
 
+**Windows**
+
 ```
-run.bat fetch-assets        # Windows
-./run.sh fetch-assets       # macOS / Linux
+.\run.bat fetch-assets
+```
+
+**macOS / Linux**
+
+```
+./run.sh fetch-assets
 ```
 
 - It writes `data/roster.csv` (name, element, role), `assets/aniimo/<slug>.png` (a square thumbnail per Aniimo)
@@ -103,8 +158,8 @@ Other things to know:
 - To use your own picture, put a PNG in `assets/aniimo/` named `<slug>.png`, or set the `image` column.
   Any Aniimo without an image gets a coloured badge with its initials. The same goes for an element sign:
   a file in `assets/elements/` overrides the downloaded one.
-- To check how everything looks without Discord, run `run.bat preview` / `./run.sh preview`. It renders a sample
-  board and bracket with your roster into `preview/`.
+- To check how everything looks without Discord, run `preview` the same way (`.\run.bat preview` on Windows,
+  `./run.sh preview` on macOS/Linux). It renders a sample board and bracket with your roster into `preview/`.
 - While the bot runs, `/roster reload` re-reads the file and images.
 - The Aniimo art belongs to its publisher. The images are downloaded to your own PC for your tournaments and are
   not part of this repository (`assets/` is git-ignored). Please don't commit or redistribute them.
@@ -174,17 +229,32 @@ Run these inside a match thread, or pass `match:<id>`.
 
 ## Test it alone (dev mode)
 
-The full walkthrough, with what you should see at each step, is in the [testing guide](docs/TESTING.md). In short:
+The full walkthrough, with what you should see at each step, is in the [testing guide](docs/TESTING.md).
+In short:
 
-Set `dev_mode: true`, then:
+1. In `config.yaml` turn on dev mode (and, if you like, short timers so tests are quick):
 
-1. Paste a CSV with made-up IDs, e.g. `11,1,Test A` · `22,2,Test B` · `33,3,Test C`.
-2. Start the tournament. Threads are created without those fake players.
-3. As an admin, click their buttons yourself: Ready, side, Make your choice, Report and Confirm.
+   ```yaml
+   dev_mode: true
+   timers:
+     draft_step_seconds: 30
+     side_choice_seconds: 30
+   ```
+
+2. Restart the bot, run `/tournament create`, and paste made-up players when it asks for them:
+
+   ```csv
+   11,1001,Test A
+   22,1002,Test B
+   33,1003,Test C
+   44,1004,Test D
+   ```
+
+3. Start the tournament. The match threads are created without those made-up players.
+4. As an admin, click their buttons yourself: Ready, side, Make your choice, Report and Confirm.
    The bot acts for the test player and tells you who.
 
-You can mix in real accounts (e.g. a second Discord account) to check pings and private messages.
-To test the timers quickly, set short values in `timers:`, e.g. `draft_step_seconds: 15`.
+You can mix in real accounts (for example a second Discord account) to check pings and private messages.
 **Turn dev mode off for real events.**
 
 ## Data, restarts and backups
