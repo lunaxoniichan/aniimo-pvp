@@ -13,6 +13,8 @@ the bracket and posts a draft-board image with the Aniimo thumbnails after every
 - **Real thumbnails and element signs** downloaded from the official wiki with one command.
 - **Extras**: a live draft feed, pick/ban stats, an optional Fearless mode, and a rating leaderboard.
 
+**Want to try it? Follow the [step-by-step testing guide](docs/TESTING.md).**
+
 Design docs: [system design](docs/SYSTEM_DESIGN.md) · [implementation plan](docs/IMPLEMENTATION.md) ·
 [approved mockups](https://claude.ai/artifact/7112nacYyipqnhKMCC3ELu)
 
@@ -171,6 +173,8 @@ Run these inside a match thread, or pass `match:<id>`.
 `/profile`, `/leaderboard` and `/stats aniimo` work for everyone.
 
 ## Test it alone (dev mode)
+
+The full walkthrough, with what you should see at each step, is in the [testing guide](docs/TESTING.md). In short:
 
 Set `dev_mode: true`, then:
 

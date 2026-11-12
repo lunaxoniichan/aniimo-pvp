@@ -33,8 +33,8 @@ All phases P1–P8 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified wit
 | Packaging | Fresh clone → install → `init` → `check` → `preview` → test suite |
 | Assets | `fetch-assets` run against the live official wiki: 120 Aniimo, 120 thumbnails, 9 element icons; offline tests cover parsing, host restrictions, image validation and roster safety |
 
-Still needs the live server (your token and IDs): run P0, then the manual checks below on a test
-server. Dev mode lets one admin play both sides of a match.
+Still needs the live server (your token and IDs): run P0, then follow the step-by-step
+[testing guide](TESTING.md) on a test server. Dev mode lets one admin play every side of a match.
 
 ---
 
