@@ -272,6 +272,13 @@ def _is_placeholder(path: Path) -> bool:
         return False
 
 
+def _same_text(path: Path, text: str) -> bool:
+    try:
+        return path.read_text(encoding="utf-8") == text
+    except OSError:
+        return False
+
+
 def _write_atomic(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -349,6 +356,8 @@ def fetch_assets(
     if not roster_csv.exists() or _is_placeholder(roster_csv):
         _write_atomic(roster_csv, csv_text.encode("utf-8"))
         report.roster_path, report.roster_note = roster_csv, "written"
+    elif _same_text(roster_csv, csv_text):
+        report.roster_path, report.roster_note = roster_csv, "already up to date"
     elif overwrite_roster:
         backup = roster_csv.with_name(f"{roster_csv.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(roster_csv, backup)

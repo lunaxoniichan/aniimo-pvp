@@ -200,6 +200,7 @@ def test_fetch_assets_end_to_end_and_rerun(tmp_path):
     net.calls.clear()
     rep2 = wiki.fetch_assets(csv_path, images, elements, fetch=net, progress=log.append)
     assert (rep2.downloaded, rep2.already_had) == (0, 3)
+    assert rep2.roster_note == "already up to date" and not (csv_path.parent / "roster.wiki.csv").exists()
     assert not [c for c in net.calls if "Wiki_" in c]
     rep3 = wiki.fetch_assets(csv_path, images, elements, fetch=net, progress=log.append, refresh=True)
     assert rep3.downloaded == 3
