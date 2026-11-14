@@ -42,6 +42,7 @@ class Tournament(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
     name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(16), default="tournament", server_default="tournament", index=True)
     status: Mapped[str] = mapped_column(String(20), index=True)
     player_cap: Mapped[int] = mapped_column(Integer, default=32)
     format: Mapped[str] = mapped_column(String(20), default="standard")

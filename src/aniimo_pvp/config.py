@@ -22,6 +22,7 @@ class Channels(BaseModel):
     announce: int = 0
     matches: int = 0
     live_draft: int = 0
+    friendly: int = 0  # where /duel works and friendly draft threads open (0 = friendly duels off)
 
 
 class Timers(BaseModel):
@@ -33,6 +34,8 @@ class Timers(BaseModel):
     auto_confirm_minutes: float = 10
     rematch_offer_seconds: float = 120
     thread_archive_minutes: float = 10
+    challenge_minutes: float = 10  # a /duel challenge expires if not accepted in time
+    friendly_idle_minutes: float = 30  # a friendly duel ends by itself after a finished draft and no activity
 
 
 class Paths(BaseModel):

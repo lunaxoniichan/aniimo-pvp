@@ -13,7 +13,7 @@ from ..domain import formats
 from ..domain.draft import DraftState, phase_label
 from ..domain.roster import Aniimo
 from ..domain.series import Score, score, wins_needed
-from ..domain.states import GameStatus
+from ..domain.states import GameStatus, TournamentKind
 from .common import current_game, draft_rows, games_of, get_match, results, to_state
 
 if TYPE_CHECKING:
@@ -65,12 +65,25 @@ class MatchView:
     due: dict[str, datetime] = field(default_factory=dict)  # pending timer kind -> due time
 
     @property
+    def is_friendly(self) -> bool:
+        return self.tournament.kind == TournamentKind.FRIENDLY
+
+    @property
+    def drafts_finished(self) -> int:
+        """Friendly duel: drafts played out so far (there is no score)."""
+        return sum(1 for g in self.games if g.status == GameStatus.FINISHED)
+
+    @property
     def round_name(self) -> str:
+        if self.is_friendly:
+            return "Friendly duel"
         size = self.tournament.bracket_size or 2
         return formats.round_name(formats.players_in_round(size, self.match.round))
 
     @property
     def label(self) -> str:
+        if self.is_friendly:
+            return "Friendly"
         return f"R{self.match.round} · M{self.match.slot + 1}"
 
     @property
@@ -198,7 +211,10 @@ async def load_match_view(ctx: AppContext, match_id: int, game_id: int | None = 
         p2 = await _player_info(s, t.id, m.p2_id)
         sc = score(results(games), m.p1_id or -1, m.p2_id or -2)
         due: dict[str, datetime] = {}
-        refs = [(Job.ref_id == m.id) & Job.kind.in_(["noshow_reminder", "noshow_escalate", "rematch_offer"])]
+        refs = [
+            (Job.ref_id == m.id)
+            & Job.kind.in_(["noshow_reminder", "noshow_escalate", "rematch_offer", "friendly_idle"])
+        ]
         if game:
             refs.append((Job.ref_id == game.id) & Job.kind.in_(["side_choice", "draft_step", "auto_confirm"]))
         for j in await s.scalars(select(Job).where(Job.status == "pending", refs[0] | refs[-1])):

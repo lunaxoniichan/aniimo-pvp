@@ -14,6 +14,26 @@ from sqlalchemy.pool import StaticPool
 
 from .models import Base
 
+# Columns added after the first release. create_all() makes new tables but never changes existing ones,
+# so older databases get these with ALTER TABLE (SQLite can add columns with a default in place).
+ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    ("tournaments", "kind", "VARCHAR(16) NOT NULL DEFAULT 'tournament'"),
+]
+ADDED_INDEXES = ["CREATE INDEX IF NOT EXISTS ix_tournaments_kind ON tournaments (kind)"]
+
+
+def _upgrade(sync_conn) -> list[str]:
+    added = []
+    for table, column, ddl in ADDED_COLUMNS:
+        cols = {row[1] for row in sync_conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+        if cols and column not in cols:
+            sync_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            added.append(f"{table}.{column}")
+    if added:
+        for ddl in ADDED_INDEXES:
+            sync_conn.exec_driver_sql(ddl)
+    return added
+
 
 class Database:
     def __init__(self, path: str):
@@ -48,9 +68,12 @@ class Database:
 
         self.sessionmaker = async_sessionmaker(self.engine, expire_on_commit=False)
 
-    async def create_all(self) -> None:
+    async def create_all(self) -> list[str]:
+        """Create missing tables and add columns that older databases don't have yet."""
         async with self.engine.begin() as conn:
+            added = await conn.run_sync(_upgrade)
             await conn.run_sync(Base.metadata.create_all)
+        return added
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:

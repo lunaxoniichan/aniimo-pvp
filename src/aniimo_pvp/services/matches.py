@@ -23,9 +23,11 @@ from .common import (
     current_game,
     draft_rows,
     entry_for,
+    forbid_in_friendly,
     games_of,
     get_match,
     get_tournament,
+    is_friendly,
     opponent,
     require_player,
     require_state,
@@ -124,6 +126,9 @@ class MatchService:
     async def job_noshow_escalate(self, job) -> None:
         async def fn(s, m: Match, out: Outbox):
             if m.state == S.WAITING and not (m.p1_ready and m.p2_ready):
+                if await is_friendly(s, m):  # nobody to escalate to: the duel just ends
+                    await self.ctx.friendlies.end_in_tx(s, m, out, None, "noshow")
+                    return
                 transition(m, S.NOSHOW)
                 missing = [p for p, r in ((m.p1_id, m.p1_ready), (m.p2_id, m.p2_ready)) if not r]
                 out.match(m.id, "noshow", missing=missing)
@@ -175,6 +180,7 @@ class MatchService:
         await self._run(match_id, self._report, actor_id, winner_id)
 
     async def _report(self, s: AsyncSession, m: Match, out: Outbox, actor_id: int, winner_id: int) -> None:
+        await forbid_in_friendly(s, m)
         require_state(m, S.PLAYING, message="There's no game in progress to report")
         require_player(m, actor_id)
         if winner_id not in (m.p1_id, m.p2_id):
@@ -278,7 +284,15 @@ class MatchService:
             )
 
     async def _finish(
-        self, s: AsyncSession, m: Match, winner_id: int | None, out: Outbox, *, walkover: bool, reason: str = "won"
+        self,
+        s: AsyncSession,
+        m: Match,
+        winner_id: int | None,
+        out: Outbox,
+        *,
+        walkover: bool,
+        reason: str = "won",
+        advance: bool = True,
     ) -> None:
         if m.state == S.DONE:
             return
@@ -293,11 +307,13 @@ class MatchService:
             g.step_deadline = None
         await self.ctx.scheduler.schedule(s, JOB_ARCHIVE, m.id, self.ctx.settings.timers.thread_archive_minutes * 60)
         out.match(m.id, "done", winner_id=winner_id, walkover=walkover, reason=reason)
-        out.finished_matches.append(m.id)
+        if advance:  # friendly duels have no bracket to advance in
+            out.finished_matches.append(m.id)
 
     # ----- next game -----
     async def next_game(self, match_id: int, actor_id: int) -> int:
         async def fn(s, m: Match, out: Outbox) -> int:
+            await forbid_in_friendly(s, m)
             require_state(m, S.BETWEEN_GAMES, message="The next game can't start now")
             require_player(m, actor_id)
             games = await games_of(s, m.id)
@@ -330,6 +346,7 @@ class MatchService:
             raise UserError("Unknown rematch type")
 
         async def fn(s, m: Match, out: Outbox):
+            await forbid_in_friendly(s, m)
             require_state(m, S.PLAYING, message="A rematch can only be requested while the game is being played")
             require_player(m, actor_id)
             if m.rematch_by and m.rematch_by != actor_id:
@@ -345,6 +362,7 @@ class MatchService:
 
     async def answer_rematch(self, match_id: int, actor_id: int, accept: bool) -> None:
         async def fn(s, m: Match, out: Outbox):
+            await forbid_in_friendly(s, m)
             require_state(m, S.PLAYING, message="That rematch offer is no longer open")
             if not m.rematch_by:
                 raise UserError("That rematch offer is no longer open")
@@ -462,6 +480,7 @@ class MatchService:
 
     async def admin_award(self, match_id: int, actor_id: int, winner_id: int, reason: str = "admin") -> None:
         async def fn(s, m: Match, out: Outbox):
+            await forbid_in_friendly(s, m)
             if m.state == S.DONE:
                 raise UserError("That match is already finished")
             if winner_id not in (m.p1_id, m.p2_id) or winner_id is None:
@@ -474,6 +493,7 @@ class MatchService:
 
     async def admin_dq_both(self, match_id: int, actor_id: int) -> None:
         async def fn(s, m: Match, out: Outbox):
+            await forbid_in_friendly(s, m)
             if m.state == S.DONE:
                 raise UserError("That match is already finished")
             for pid in (m.p1_id, m.p2_id):
@@ -488,6 +508,7 @@ class MatchService:
 
     async def admin_set_result(self, match_id: int, actor_id: int, winner_id: int) -> None:
         async def fn(s, m: Match, out: Outbox):
+            await forbid_in_friendly(s, m)
             require_state(
                 m,
                 S.PLAYING,
@@ -509,6 +530,7 @@ class MatchService:
             raise UserError("Mode must be same_teams or new_draft")
 
         async def fn(s, m: Match, out: Outbox) -> int:
+            await forbid_in_friendly(s, m)
             require_state(m, S.PLAYING, S.CONFIRMING, S.DISPUTED, message="There's no game to replay right now")
             m.rematch_by = m.rematch_mode = None
             await self.ctx.scheduler.cancel(s, JOB_REMATCH_OFFER, m.id)

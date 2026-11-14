@@ -13,7 +13,7 @@ from ..db.models import Entry, Game, Match, Player, Tournament
 from ..domain import elo, formats
 from ..domain.bracket import bracket_size, build_bracket
 from ..domain.players_csv import CsvIssue, parse_players_csv
-from ..domain.states import ACTIVE_TOURNAMENT, EntryStatus, GameStatus, MatchState, TournamentStatus
+from ..domain.states import ACTIVE_TOURNAMENT, EntryStatus, GameStatus, MatchState, TournamentKind, TournamentStatus
 from .common import (
     GAME_JOBS,
     JOB_NOSHOW_ESCALATE,
@@ -65,7 +65,11 @@ class TournamentService:
         async with self.ctx.db.session() as s:
             return await s.scalar(
                 select(Tournament)
-                .where(Tournament.guild_id == guild_id, Tournament.status.in_([x.value for x in ACTIVE_TOURNAMENT]))
+                .where(
+                    Tournament.guild_id == guild_id,
+                    Tournament.kind == TournamentKind.TOURNAMENT,
+                    Tournament.status.in_([x.value for x in ACTIVE_TOURNAMENT]),
+                )
                 .order_by(Tournament.id.desc())
                 .limit(1)
             )
@@ -73,7 +77,10 @@ class TournamentService:
     async def latest(self, guild_id: int) -> Tournament | None:
         async with self.ctx.db.session() as s:
             return await s.scalar(
-                select(Tournament).where(Tournament.guild_id == guild_id).order_by(Tournament.id.desc()).limit(1)
+                select(Tournament)
+                .where(Tournament.guild_id == guild_id, Tournament.kind == TournamentKind.TOURNAMENT)
+                .order_by(Tournament.id.desc())
+                .limit(1)
             )
 
     async def require_active(self, guild_id: int, *statuses: TournamentStatus) -> Tournament:
@@ -109,13 +116,16 @@ class TournamentService:
         async with self.ctx.db.transaction() as s:
             existing = await s.scalar(
                 select(Tournament).where(
-                    Tournament.guild_id == guild_id, Tournament.status.in_([x.value for x in ACTIVE_TOURNAMENT])
+                    Tournament.guild_id == guild_id,
+                    Tournament.kind == TournamentKind.TOURNAMENT,
+                    Tournament.status.in_([x.value for x in ACTIVE_TOURNAMENT]),
                 )
             )
             if existing:
                 raise UserError(f"{existing.name} is still {existing.status}. Finish or /tournament cancel it first.")
             t = Tournament(
                 guild_id=guild_id,
+                kind=TournamentKind.TOURNAMENT.value,
                 name=name,
                 status=TournamentStatus.SETUP.value,
                 player_cap=formats.DEFAULT_CAP,

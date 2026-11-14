@@ -14,11 +14,13 @@ from ..domain.roster import Aniimo
 from ..domain.states import GameStatus, MatchState
 from .common import (
     JOB_DRAFT_STEP,
+    JOB_FRIENDLY_IDLE,
     audit,
     current_game,
     draft_rows,
     fearless_locked,
     get_match,
+    is_friendly,
     to_state,
     transition,
 )
@@ -59,10 +61,17 @@ class DraftService:
         rows = await draft_rows(s, game.id)
         state = to_state(self.ctx.order, rows)
         await self.ctx.scheduler.cancel(s, JOB_DRAFT_STEP, game.id)
+        friendly = await is_friendly(s, m)
+        if friendly:
+            await self.ctx.scheduler.cancel(s, JOB_FRIENDLY_IDLE, m.id)
         if state.complete:
             game.status = GameStatus.PLAYING.value
             game.step_deadline = None
             transition(m, S.PLAYING)
+            if friendly:  # the duel closes by itself if nobody starts another draft
+                await self.ctx.scheduler.schedule(
+                    s, JOB_FRIENDLY_IDLE, m.id, self.ctx.settings.timers.friendly_idle_minutes * 60
+                )
             out.match(m.id, "draft_complete", game_id=game.id)
             return
         secs = self.ctx.settings.timers.draft_step_seconds

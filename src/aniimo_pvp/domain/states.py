@@ -5,6 +5,11 @@ from __future__ import annotations
 from enum import StrEnum
 
 
+class TournamentKind(StrEnum):
+    TOURNAMENT = "tournament"
+    FRIENDLY = "friendly"  # a 1v1 duel between friends: one match, drafts only, no results or ratings
+
+
 class TournamentStatus(StrEnum):
     SETUP = "setup"
     REGISTRATION = "registration"
@@ -45,12 +50,14 @@ class GameStatus(StrEnum):
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
     VOIDED = "voided"
+    FINISHED = "finished"  # friendly duel: the draft was played out, no result is recorded
 
 
 class VoidReason(StrEnum):
     REMATCH_SAME_TEAMS = "rematch_same_teams"
     REMATCH_NEW_DRAFT = "rematch_new_draft"
     ADMIN_REPLAY = "admin_replay"
+    DUEL_ENDED = "duel_ended"  # friendly duel ended before this draft finished
 
 
 S = MatchState

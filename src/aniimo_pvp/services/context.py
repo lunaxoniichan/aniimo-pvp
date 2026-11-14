@@ -16,6 +16,7 @@ from .scheduler import Scheduler
 
 if TYPE_CHECKING:
     from .drafts import DraftService
+    from .friendly import FriendlyService
     from .matches import MatchService
     from .stats import StatsService
     from .tournament import TournamentService
@@ -35,6 +36,7 @@ class AppContext:
     matches: MatchService = None  # type: ignore[assignment]
     drafts: DraftService = None  # type: ignore[assignment]
     stats: StatsService = None  # type: ignore[assignment]
+    friendlies: FriendlyService = None  # type: ignore[assignment]
 
     @property
     def order(self) -> tuple[tuple[str, str], ...]:
@@ -51,13 +53,16 @@ def build_context(
 ) -> AppContext:
     from .common import (
         JOB_AUTO_CONFIRM,
+        JOB_CHALLENGE_EXPIRE,
         JOB_DRAFT_STEP,
+        JOB_FRIENDLY_IDLE,
         JOB_NOSHOW_ESCALATE,
         JOB_NOSHOW_REMINDER,
         JOB_REMATCH_OFFER,
         JOB_SIDE_CHOICE,
     )
     from .drafts import DraftService
+    from .friendly import FriendlyService
     from .matches import MatchService
     from .stats import StatsService
     from .tournament import TournamentService
@@ -75,6 +80,7 @@ def build_context(
     ctx.matches = MatchService(ctx)
     ctx.drafts = DraftService(ctx)
     ctx.stats = StatsService(ctx)
+    ctx.friendlies = FriendlyService(ctx)
     sch = ctx.scheduler
     sch.register(JOB_NOSHOW_REMINDER, ctx.matches.job_noshow_reminder)
     sch.register(JOB_NOSHOW_ESCALATE, ctx.matches.job_noshow_escalate)
@@ -82,4 +88,6 @@ def build_context(
     sch.register(JOB_AUTO_CONFIRM, ctx.matches.job_auto_confirm)
     sch.register(JOB_REMATCH_OFFER, ctx.matches.job_rematch_offer)
     sch.register(JOB_DRAFT_STEP, ctx.drafts.job_step_timeout)
+    sch.register(JOB_CHALLENGE_EXPIRE, ctx.friendlies.job_challenge_expire)
+    sch.register(JOB_FRIENDLY_IDLE, ctx.friendlies.job_idle)
     return ctx

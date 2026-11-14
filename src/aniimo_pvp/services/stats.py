@@ -38,6 +38,7 @@ class PlayerProfile:
     games_lost: int
     top_picks: list[tuple[str, int]] = field(default_factory=list)
     banned_against: list[tuple[str, int]] = field(default_factory=list)
+    friendly_drafts: int = 0  # drafts played in friendly duels (not part of the record above)
 
 
 class StatsService:
@@ -116,7 +117,10 @@ class StatsService:
                         picks[r.aniimo_slug] += 1
                     elif r.kind == "ban" and r.player_id is not None and r.player_id != player_id:
                         banned[r.aniimo_slug] += 1
-            return PlayerProfile(p, matches or 0, won, len(games) - won, picks.most_common(3), banned.most_common(3))
+        friendly = await self.ctx.friendlies.drafts_played(player_id)
+        return PlayerProfile(
+            p, matches or 0, won, len(games) - won, picks.most_common(3), banned.most_common(3), friendly
+        )
 
     async def leaderboard(self, limit: int = 10) -> list[Player]:
         async with self.ctx.db.session() as s:

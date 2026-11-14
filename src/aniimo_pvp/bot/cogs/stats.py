@@ -59,13 +59,15 @@ class StatsCog(commands.Cog):
     async def _profile(self, interaction: discord.Interaction, user: discord.abc.User) -> None:
         prof = await self.bot.ctx.stats.profile(user.id)
         if prof is None:
-            raise UserError(f"{user.display_name} hasn't played in a tournament yet")
+            raise UserError(f"{user.display_name} hasn't played yet")
         name = self.bot.ctx.roster.name
         p = prof.player
         e = discord.Embed(title=f"{p.display_name}", colour=PURPLE)
         e.add_field(name="Rating", value=str(p.rating))
         e.add_field(name="Matches", value=f"{p.wins}W – {p.losses}L")
         e.add_field(name="Games", value=f"{prof.games_won}W – {prof.games_lost}L")
+        if prof.friendly_drafts:
+            e.add_field(name="Friendly drafts", value=str(prof.friendly_drafts))
         if prof.top_picks:
             e.add_field(name="Favourite Aniimo", value="\n".join(f"{name(s)} · {n}" for s, n in prof.top_picks))
         if prof.banned_against:

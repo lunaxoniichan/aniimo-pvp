@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import AuditLog, DraftActionRow, Entry, Game, Match, Player, Tournament
 from ..domain.draft import Action, DraftState
 from ..domain.series import GameResult
-from ..domain.states import GameStatus, MatchState, check_transition
+from ..domain.states import GameStatus, MatchState, TournamentKind, check_transition
 from .errors import NotAllowed, UserError
 
 JOB_NOSHOW_REMINDER = "noshow_reminder"
@@ -20,7 +20,9 @@ JOB_DRAFT_STEP = "draft_step"
 JOB_AUTO_CONFIRM = "auto_confirm"
 JOB_REMATCH_OFFER = "rematch_offer"
 JOB_ARCHIVE = "archive_thread"
-MATCH_JOBS = (JOB_NOSHOW_REMINDER, JOB_NOSHOW_ESCALATE, JOB_REMATCH_OFFER)
+JOB_CHALLENGE_EXPIRE = "challenge_expire"  # ref: tournament id of a friendly duel
+JOB_FRIENDLY_IDLE = "friendly_idle"  # ref: match id of a friendly duel
+MATCH_JOBS = (JOB_NOSHOW_REMINDER, JOB_NOSHOW_ESCALATE, JOB_REMATCH_OFFER, JOB_FRIENDLY_IDLE)
 GAME_JOBS = (JOB_SIDE_CHOICE, JOB_DRAFT_STEP, JOB_AUTO_CONFIRM)
 
 
@@ -78,13 +80,23 @@ async def fearless_locked(s: AsyncSession, match: Match, game: Game, player_id: 
         .join(Game, Game.id == DraftActionRow.game_id)
         .where(
             Game.match_id == match.id,
-            Game.status == GameStatus.CONFIRMED,
+            Game.status.in_([GameStatus.CONFIRMED, GameStatus.FINISHED]),
             Game.number < game.number,
             DraftActionRow.kind == "pick",
             DraftActionRow.player_id == player_id,
         )
     )
     return {r for r in rows if r}
+
+
+async def is_friendly(s: AsyncSession, match: Match) -> bool:
+    t = await s.get(Tournament, match.tournament_id)
+    return bool(t and t.kind == TournamentKind.FRIENDLY)
+
+
+async def forbid_in_friendly(s: AsyncSession, match: Match) -> None:
+    if await is_friendly(s, match):
+        raise UserError("Friendly duels don't record results. Use New draft or End duel instead.")
 
 
 def transition(match: Match, target: MatchState) -> None:
