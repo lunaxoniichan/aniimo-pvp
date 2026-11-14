@@ -51,7 +51,8 @@ class AniimoBot(commands.Bot):
         if backup:
             log.info("Database backup: %s", backup)
         self.db = Database(s.paths.database)
-        await self.db.create_all()
+        for column in await self.db.create_all():
+            log.info("Database upgraded: added %s", column)
         roster, warnings = load_roster(s.paths.roster_csv, s.paths.images_dir)
         for w in warnings:
             log.warning("Roster: %s", w)
@@ -61,12 +62,17 @@ class AniimoBot(commands.Bot):
         self.add_dynamic_items(*ALL_DYNAMIC)
 
         from .cogs.admin import AdminCog
+        from .cogs.friendly import FriendlyCog
         from .cogs.roster import RosterCog
         from .cogs.stats import StatsCog
         from .cogs.tournament import TournamentCog
 
-        for cog in (TournamentCog(self), AdminCog(self), StatsCog(self), RosterCog(self)):
+        for cog in (TournamentCog(self), AdminCog(self), StatsCog(self), RosterCog(self), FriendlyCog(self)):
             await self.add_cog(cog)
+        if not s.dev_mode:
+            self.tree.remove_command("duel-test")  # only offered while testing
+        if not s.channels.friendly:
+            log.info("Friendly duels are off: set channels.friendly in config.yaml to turn them on")
 
         guild = discord.Object(id=s.guild_id)
         self.tree.copy_global_to(guild=guild)

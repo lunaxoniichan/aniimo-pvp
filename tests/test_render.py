@@ -89,3 +89,21 @@ async def test_bracket_small_and_full_size(make_ctx):
     tt2, rounds2 = await load_bracket(ctx2, t2.id)
     img2 = save("bracket_128.png", br.render(tt2.name, tt2.format, rounds2))
     assert len(rounds2) == 7 and img2.height > 2000
+
+
+async def test_friendly_board_has_no_series(ctx):
+    a, b = 100000000000000001, 100000000000000002
+    t, m = await ctx.friendlies.challenge(9, 4242, (a, "Luna"), (b, "Kai"), fearless=True)
+    await ctx.friendlies.accept(t.id, b)
+    await ctx.matches.ready(m.id, a)
+    await ctx.matches.ready(m.id, b)
+    mm = await ctx.matches.get(m.id)
+    await ctx.matches.choose_side(m.id, mm.side_chooser_id, "A")
+    await play_draft(ctx, m.id)
+    await ctx.friendlies.new_draft(m.id, a)
+    mm = await ctx.matches.get(m.id)
+    await ctx.matches.choose_side(m.id, mm.side_chooser_id, "B")
+    view = await load_match_view(ctx, m.id)
+    assert view.is_friendly and view.game.number == 2
+    img = save("board_friendly.png", BoardRenderer().render(view))
+    assert img.size == (1280, 720)

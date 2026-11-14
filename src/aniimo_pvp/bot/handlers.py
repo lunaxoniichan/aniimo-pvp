@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from ..db.models import Player
 from ..services.errors import NotAllowed, UserError
 from ..services.views import MatchView, PlayerInfo, load_match_view
 from .util import is_admin
@@ -19,6 +20,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 B = discord.ButtonStyle
 ADMIN_MATCH_ACTIONS = {"award", "extend", "dqboth", "setres", "replay"}
+# buttons that only exist in tournament matches (an old message could still show one in a duel room)
+TOURNAMENT_MATCH_ACTIONS = {"report", "confirm", "dispute", "rematch", "rematch_yes", "rematch_no", "next", "admin"}
+TOURNAMENT_MATCH_ACTIONS |= ADMIN_MATCH_ACTIONS
 ADMIN_TOURNAMENT_ACTIONS = {"next", "rename", "cancel", "confirm", "discard", "start", "nextround"}
 
 
@@ -65,6 +69,8 @@ async def handle_match_action(interaction: discord.Interaction, action: str, mat
         handler = MATCH_HANDLERS.get(action)
         if handler is None:
             raise UserError("This button is no longer supported")
+        if action in TOURNAMENT_MATCH_ACTIONS and (await load_match_view(bot.ctx, match_id)).is_friendly:
+            raise UserError("Friendly duels don't have results or admins. Use New draft or End duel instead.")
         await handler(bot, interaction, match_id, arg)
     except UserError as e:
         await reply(interaction, f"⚠️ {e}")
@@ -266,6 +272,44 @@ async def _replay(bot, interaction, mid, arg):
     await _admin_done(interaction, "Game will be replayed.")
 
 
+# ---------------- friendly duels ----------------
+async def _friendly_next(bot, interaction, mid, arg):
+    v = await load_match_view(bot.ctx, mid)
+    actor = pick_actor(bot, interaction, [v.p1, v.p2])
+    await thinking(interaction)
+    await bot.ctx.friendlies.new_draft(mid, actor)
+    v = await load_match_view(bot.ctx, mid)
+    chooser = v.player(v.match.side_chooser_id)
+    await reply(
+        interaction,
+        f"Draft {v.game.number} started. {chooser.name if chooser else 'The other player'} chooses the side this time."
+        + acting_note(interaction, v, actor),
+    )
+
+
+async def _friendly_end(bot, interaction, mid, arg):
+    v = await load_match_view(bot.ctx, mid)
+    admin = is_admin(bot, interaction.user)
+    actor = pick_actor(bot, interaction, [v.p1, v.p2])
+    if actor not in (v.p1.id, v.p2.id) and not admin:
+        raise NotAllowed("Only the two players can end this duel")
+    if v.match.state == "done":
+        raise UserError("This duel is already over")
+    played = v.drafts_finished + (1 if v.match.state == "playing" else 0)
+
+    async def go() -> str:
+        n = await bot.ctx.friendlies.end(mid, actor, is_admin=admin)
+        return f"Duel ended after {n} draft{'s' if n != 1 else ''}."
+
+    unfinished = " The draft in progress is dropped." if v.match.state in ("side_choice", "drafting", "paused") else ""
+    await interaction.response.send_message(
+        f"End the duel? {played} draft{'s' if played != 1 else ''} played.{unfinished}\n"
+        "-# Nothing is recorded, so you can start another one any time with `/duel`.",
+        view=ChoiceView([("Yes, end the duel", B.danger, go)]),
+        ephemeral=True,
+    )
+
+
 MATCH_HANDLERS = {
     "ready": _ready,
     "side": _side,
@@ -283,6 +327,8 @@ MATCH_HANDLERS = {
     "dqboth": _dqboth,
     "setres": _setres,
     "replay": _replay,
+    "fnext": _friendly_next,
+    "fend": _friendly_end,
 }
 
 
@@ -324,6 +370,8 @@ async def handle_tournament_action(interaction: discord.Interaction, action: str
             await thinking(interaction)
             await ctx.tournaments.start(tid, uid)
             await reply(interaction, "Started! The bracket is posted in the announce channel.")
+        elif action in ("duel_accept", "duel_decline", "duel_cancel"):
+            await _duel_answer(bot, interaction, action, tid)
         elif action == "nextround":
             await thinking(interaction)
             n = await ctx.tournaments.start_next_round(tid, uid)
@@ -335,6 +383,31 @@ async def handle_tournament_action(interaction: discord.Interaction, action: str
     except Exception:
         log.exception("Tournament action %s failed", action)
         await reply(interaction, "⚠️ Something went wrong. An admin can check the bot log.")
+
+
+async def _duel_answer(bot: AniimoBot, interaction: discord.Interaction, action: str, tid: int) -> None:
+    ctx = bot.ctx
+    _, m = await ctx.friendlies.get(tid)
+    uid = interaction.user.id
+    actor = uid
+    answering = action in ("duel_accept", "duel_decline")
+    if answering and bot.settings.dev_mode and uid != m.p2_id and (uid == m.p1_id or is_admin(bot, interaction.user)):
+        async with ctx.db.session() as s:  # dev mode: answer for a test opponent, who can't click
+            p2 = await s.get(Player, m.p2_id)
+        if p2 is not None and p2.is_fake:
+            actor = m.p2_id
+    await thinking(interaction)
+    if action == "duel_accept":
+        await ctx.friendlies.accept(tid, actor)
+        m = await ctx.matches.get(m.id)
+        room = f" <#{m.thread_id}>" if m.thread_id else ""
+        await reply(interaction, f"Duel on! Your room is open:{room}")
+    elif action == "duel_decline":
+        await ctx.friendlies.decline(tid, actor)
+        await reply(interaction, "Challenge declined.")
+    else:
+        await ctx.friendlies.cancel_challenge(tid, actor, is_admin=is_admin(bot, interaction.user))
+        await reply(interaction, "Challenge cancelled.")
 
 
 async def handle_setup_select(interaction: discord.Interaction, field: str, tid: int, value: str) -> None:

@@ -12,6 +12,8 @@ from sqlalchemy import select
 
 from ..db.models import Entry, Match
 from ..domain import formats
+from ..domain.states import TournamentKind
+from ..services.common import JOB_CHALLENGE_EXPIRE
 from ..services.notifier import Notifier
 from ..services.views import MatchView, PlayerInfo, load_bracket, load_match_view
 from . import panels
@@ -172,6 +174,8 @@ class DiscordNotifier(Notifier):
 
     async def t_round_opened(self, tid: int, round: int, match_ids: list[int]) -> None:
         t = await self.ctx.tournaments.get(tid)
+        if t.kind == TournamentKind.FRIENDLY:
+            return  # a duel isn't announced; its card in the friendly channel links the room
         ann = await self.announce_channel()
         if ann:
             rows = await self._round_rows(tid, round)
@@ -229,6 +233,53 @@ class DiscordNotifier(Notifier):
             if ch:
                 await ch.send(f"**{t.name}** was cancelled by an admin.")
 
+    # ---------------- friendly duels ----------------
+    async def edit_duel_card(self, tid: int, **kwargs: Any) -> None:
+        t = await self.ctx.tournaments.get(tid)
+        if not (t.setup_channel_id and t.setup_message_id):
+            return
+        matches = await self.ctx.tournaments.matches(tid)
+        if not matches:
+            return
+        v = await load_match_view(self.ctx, matches[0].id)
+        jobs = await self.ctx.scheduler.pending(JOB_CHALLENGE_EXPIRE, tid)
+        _, embed, view = panels.duel_card(v, due=jobs[0].due_at if jobs else None, **kwargs)
+        ch = await resolve_channel(self.bot, t.setup_channel_id)
+        if ch is None:
+            return
+        try:  # the ping stays as it was; only the card and its buttons change
+            await ch.get_partial_message(t.setup_message_id).edit(embed=embed, view=view)
+        except discord.HTTPException as e:
+            log.warning("Couldn't edit duel card: %s", e)
+
+    async def t_duel_accepted(self, tid: int, match_id: int) -> None:
+        await self.edit_duel_card(tid)
+
+    async def t_duel_declined(self, tid: int, match_id: int, by: int | None) -> None:
+        await self.edit_duel_card(tid, outcome="declined")
+
+    async def t_duel_cancelled(self, tid: int, match_id: int, by: int | None) -> None:
+        await self.edit_duel_card(tid, outcome="cancelled")
+
+    async def t_duel_expired(self, tid: int, match_id: int, by: int | None) -> None:
+        await self.edit_duel_card(tid, outcome="expired")
+
+    async def t_duel_ended(self, tid: int, match_id: int, drafts: int, by: int | None, reason: str) -> None:
+        await self.edit_duel_card(tid, outcome=reason, drafts=drafts)
+        v = await load_match_view(self.ctx, match_id)
+        n = f"{drafts} draft{'s' if drafts != 1 else ''}"
+        text = {
+            "ended": f"🏁 {v.name(by) if by in (v.match.p1_id, v.match.p2_id) else 'An admin'} ended the duel "
+            f"after {n}. GG!",
+            "idle": f"🏁 The duel closed after {n}: nobody started a new draft for a while.",
+            "noshow": "🏁 The duel closed because you weren't both ready in time.",
+        }.get(reason, f"🏁 The duel is over after {n}.")
+        th = await self.thread(v.match)
+        if th:
+            await th.send(
+                f"{text}\n-# This thread is archived in a few minutes.", allowed_mentions=discord.AllowedMentions.none()
+            )
+
     # ---------------- live status ----------------
     def schedule_status(self, tid: int) -> None:
         if not self.bot.settings.channels.live_draft:
@@ -243,7 +294,7 @@ class DiscordNotifier(Notifier):
         try:
             t = await self.ctx.tournaments.get(tid)
             ch = await self.live_channel()
-            if not ch or not t.current_round:
+            if not ch or not t.current_round or t.kind == TournamentKind.FRIENDLY:
                 return
             rows = await self._round_rows(tid, t.current_round)
             embed = panels.live_status_embed(t, rows)
@@ -300,14 +351,21 @@ class DiscordNotifier(Notifier):
     # ---------------- match room ----------------
     async def m_opened(self, mid: int) -> None:
         v = await load_match_view(self.ctx, mid)
-        parent = await resolve_channel(self.bot, self.bot.settings.channels.matches)
+        if v.is_friendly:  # the room opens next to the challenge, in the friendly channel
+            parent_id = v.tournament.setup_channel_id or self.bot.settings.channels.friendly
+        else:
+            parent_id = self.bot.settings.channels.matches
+        parent = await resolve_channel(self.bot, parent_id)
         if parent is None:
-            log.error("Matches channel not found; can't open match %s", mid)
+            log.error("Channel %s not found; can't open match %s", parent_id, mid)
             return
         name = truncate(f"{v.label} · {v.p1.name} vs {v.p2.name}", 100)
         try:
             thread = await parent.create_thread(
-                name=name, type=discord.ChannelType.private_thread, invitable=False, auto_archive_duration=1440
+                name=name,
+                type=discord.ChannelType.private_thread,
+                invitable=v.is_friendly,  # friends may bring spectators; tournament rooms stay closed
+                auto_archive_duration=1440,
             )
         except discord.HTTPException as e:
             log.warning("Private thread failed (%s); falling back to a public thread", e)
@@ -369,7 +427,8 @@ class DiscordNotifier(Notifier):
             kwargs["view"] = view
         msg = await th.send(content, **kwargs)
         await self.ctx.matches.set_message_ids(mid, turn_message_id=msg.id)
-        self.schedule_live_board(mid)
+        if not v.is_friendly:  # duels have no live feed
+            self.schedule_live_board(mid)
 
     async def m_ready(self, mid: int, player_id: int) -> None:
         await self.edit_panel(mid)
@@ -380,9 +439,10 @@ class DiscordNotifier(Notifier):
         if th:
             names = " ".join(who(v.player(p)) for p in missing)
             due = v.due.get("noshow_escalate")
+            when = rel(due) if due else "soon"
+            then = f"The duel closes {when}" if v.is_friendly else f"An admin decides {when}"
             await th.send(
-                f"⏰ {names} reminder: click **Ready** in the panel above. "
-                f"An admin decides {rel(due) if due else 'soon'} if you don't.",
+                f"⏰ {names} reminder: click **Ready** in the panel above. {then} if you don't.",
                 allowed_mentions=MENTIONS,
             )
 
@@ -442,6 +502,10 @@ class DiscordNotifier(Notifier):
 
     async def m_draft_complete(self, mid: int, game_id: int) -> None:
         await self.post_turn(mid)  # final board, no buttons
+        m = await self.ctx.matches.get(mid)
+        t = await self.ctx.tournaments.get(m.tournament_id)
+        if t.kind == TournamentKind.FRIENDLY:  # no live feed keeps it, so the board stays in the room as history
+            await self.ctx.matches.set_message_ids(mid, turn_message_id=None)
         await self.post_panel(mid)
 
     async def m_paused(self, mid: int, **info) -> None:
@@ -565,6 +629,9 @@ class DiscordNotifier(Notifier):
         if not th:
             return
         await delete_message(th, v.match.turn_message_id)
+        if v.is_friendly:
+            await self.edit_panel(mid)  # "Duel over", no buttons
+            return
         if v.match.panel_message_id:
             try:
                 await th.get_partial_message(v.match.panel_message_id).edit(view=None)

@@ -98,19 +98,23 @@ class BoardRenderer:
         d.rectangle((0, 0, W, 64), fill=HEADER_BG)
         d.line((0, 64, W, 64), fill=LINE)
         f_title = self.fonts.display(22)
-        title = self.fit(v.tournament.name, f_title, 330)
+        title = self.fit("Friendly duel" if v.is_friendly else v.tournament.name, f_title, 330)
         d.text((24, 32), title, font=f_title, fill=TEXT, anchor="lm")
         x = 24 + f_title.getlength(title) + 14
         g = v.game
-        game_txt = f"Game {g.number}" + (f" (replay {g.attempt - 1})" if g and g.attempt > 1 else "") if g else ""
-        players = (v.tournament.bracket_size or 2) >> (v.match.round - 1)
-        sub = f"{round_name(players)} · Match {v.match.slot + 1}" + (f" · {game_txt}" if game_txt else "")
-        sub += f" · Bo{v.match.bo}"
+        if v.is_friendly:  # no round, bracket or series: just which draft this is
+            sub = f"Draft {g.number}" if g else ""
+            sub += " · Fearless" if v.tournament.fearless else ""
+        else:
+            game_txt = f"Game {g.number}" + (f" (replay {g.attempt - 1})" if g and g.attempt > 1 else "") if g else ""
+            players = (v.tournament.bracket_size or 2) >> (v.match.round - 1)
+            sub = f"{round_name(players)} · Match {v.match.slot + 1}" + (f" · {game_txt}" if game_txt else "")
+            sub += f" · Bo{v.match.bo}"
         d.text((x, 33), self.fit(sub, self.fonts.inter(15), 470), font=self.fonts.inter(15), fill=MUTED, anchor="lm")
         a, b = v.side_a, v.side_b
         if a and b:
             f_n, f_s = self.fonts.inter(15, "semibold"), self.fonts.display(22)
-            score = f"{v.score_of(a.id)} – {v.score_of(b.id)}"
+            score = "vs" if v.is_friendly else f"{v.score_of(a.id)} – {v.score_of(b.id)}"
             b_name = self.fit(b.name, f_n, 130)
             a_name = self.fit(a.name, f_n, 130)
             x = W - 24
@@ -120,7 +124,8 @@ class BoardRenderer:
             x -= f_s.getlength(score) + 12
             d.text((x, 32), a_name, font=f_n, fill=SIDE["A"]["lt"], anchor="rm")
             x -= f_n.getlength(a_name) + 12
-            d.text((x, 32), "Series", font=self.fonts.inter(15), fill=MUTED, anchor="rm")
+            if not v.is_friendly:
+                d.text((x, 32), "Series", font=self.fonts.inter(15), fill=MUTED, anchor="rm")
 
     def _panel(self, img, d, v: MatchView, side: str, player, x: int) -> None:
         y0, y1 = 88, H - 36 - 24

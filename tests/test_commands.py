@@ -1,5 +1,6 @@
 from aniimo_pvp.bot.client import AniimoBot
 from aniimo_pvp.bot.cogs.admin import AdminCog, parse_id
+from aniimo_pvp.bot.cogs.friendly import FriendlyCog
 from aniimo_pvp.bot.cogs.roster import RosterCog
 from aniimo_pvp.bot.cogs.stats import StatsCog
 from aniimo_pvp.bot.cogs.tournament import TournamentCog
@@ -15,11 +16,21 @@ def walk(payload, path=""):
 
 async def test_all_slash_commands_build_valid_payloads():
     bot = AniimoBot(Settings(token="x", guild_id=1, admin_role_id=2, channels=Channels(admin=3, announce=4, matches=5)))
-    for cog in (TournamentCog(bot), AdminCog(bot), StatsCog(bot), RosterCog(bot)):
+    for cog in (TournamentCog(bot), AdminCog(bot), StatsCog(bot), RosterCog(bot), FriendlyCog(bot)):
         await bot.add_cog(cog)
     payloads = [c.to_dict(bot.tree) for c in bot.tree.get_commands()]
     names = {p["name"] for p in payloads}
-    assert {"tournament", "admin", "stats", "roster", "leaderboard", "profile"} <= names
+    assert {
+        "tournament",
+        "admin",
+        "stats",
+        "roster",
+        "leaderboard",
+        "profile",
+        "duel",
+        "duel-test",
+        "register",
+    } <= names
     seen = set()
     for top in payloads:
         for path, p in walk(top):

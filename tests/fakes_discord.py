@@ -71,6 +71,7 @@ class FakeChannel:
     async def create_thread(self, *, name, type=None, invitable=True, auto_archive_duration=1440, **_):
         th = FakeThread(self.bot, next(_ids), name)
         th.private = type == discord.ChannelType.private_thread
+        th.invitable = invitable
         self.threads.append(th)
         self.bot.channels[th.id] = th
         return th
@@ -133,8 +134,10 @@ class FakeBot:
             (ch.announce, "announce"),
             (ch.matches, "matches"),
             (ch.live_draft, "live-draft"),
+            (ch.friendly, "friendly"),
         ):
-            self.channels[cid] = FakeChannel(self, cid, name)
+            if cid:
+                self.channels[cid] = FakeChannel(self, cid, name)
 
     def get_channel(self, cid):
         return self.channels.get(cid)
@@ -191,10 +194,18 @@ class FakeInteraction:
         self.data = data or {}
         self.message = message
         self.channel = channel
+        self.channel_id = channel.id if channel else None
         self.guild_id = bot.settings.guild_id
         self.sent: list[tuple] = []
         self.response = FakeResponse(self)
         self.followup = FakeFollowup(self)
+
+    async def original_response(self):
+        """The public message the response created, posted in the channel so it can be edited later."""
+        kind, content, kwargs = next(x for x in self.sent if x[0] == "send")
+        msg = FakeMessage(self.channel, content, **kwargs)
+        self.channel.messages.append(msg)
+        return msg
 
     async def edit_original_response(self, **kwargs):
         self.sent.append(("edit_original", kwargs.get("content"), kwargs))

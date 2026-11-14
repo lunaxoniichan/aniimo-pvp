@@ -162,7 +162,22 @@ def start_view(t: Tournament) -> discord.ui.View:
 
 
 # ---------------- match room ----------------
+def _uid(p) -> str:
+    return f"Aniimo UID\n```{p.uid}```" if p.uid else "Aniimo UID not set yet.\nUse `/register` to save it."
+
+
 def uid_card(v: MatchView, bot: AniimoBot) -> tuple[str, discord.Embed]:
+    if v.is_friendly:
+        content = f"{who(v.p1)} {who(v.p2)} your friendly duel room is ready."
+        e = discord.Embed(title=f"Friendly · {v.p1.name} vs {v.p2.name}", colour=PURPLE)
+        e.add_field(name=f"{v.p1.name} · hosts", value=_uid(v.p1))
+        e.add_field(name=v.p2.name, value=_uid(v.p2))
+        e.description = (
+            f"{v.p1.name} creates the in-game room and invites {v.p2.name} by UID. "
+            "Click **Ready** when you're both online.\n"
+            "No results are recorded: draft as many times as you like. Mention a friend here to let them watch."
+        )
+        return content, e
     content = f"{who(v.p1)} {who(v.p2)} your {v.round_name} match is ready."
     if bot.settings.admin_role_id:
         content += f" ({'<@&' + str(bot.settings.admin_role_id) + '>'} can see this thread.)"
@@ -185,18 +200,30 @@ def panel(v: MatchView, bot: AniimoBot) -> tuple[str | None, discord.Embed, disc
     mid = m.id
     st = m.state
     g = v.game
-    call_admin = MatchButton("admin", mid, label="Call admin", emoji="🆘")
+    friendly = v.is_friendly
+    if friendly:  # no admins in a friendly: the players can always end it instead
+        call_admin = MatchButton("fend", mid, label="End duel", emoji="🏁")
+    else:
+        call_admin = MatchButton("admin", mid, label="Call admin", emoji="🆘")
     if st in (S.WAITING, S.NOSHOW):
         e = discord.Embed(title="Ready check", colour=PURPLE)
         e.description = "\n".join([_ready_line(v.p1.name, m.p1_ready), _ready_line(v.p2.name, m.p2_ready)])
         if st == S.NOSHOW:
             e.add_field(name="Waiting for an admin", value="The ready check timed out. An admin will decide.")
+        if friendly and v.due.get("noshow_escalate"):
+            e.description += f"\n-# The duel closes {rel(v.due['noshow_escalate'])} if you're not both ready."
         view = persistent_view(MatchButton("ready", mid, label="Ready", style=B.success, emoji="✅"), call_admin)
         missing = [p for p, r in ((v.p1, m.p1_ready), (v.p2, m.p2_ready)) if not r]
         return " ".join(who(p) for p in missing) or None, e, view
     if st == S.SIDE_CHOICE:
         chooser = v.player(m.side_chooser_id)
-        if m.coin_winner_id:
+        if friendly and m.coin_winner_id:
+            title = f"🪙 {chooser.name} wins the toss"
+            desc = f"Coin flip for Draft {g.number}. {who(chooser)}, choose your side."
+        elif friendly:
+            title = f"Draft {g.number} · {chooser.name} chooses"
+            desc = f"You take turns choosing the side. {who(chooser)}, it's your turn this draft."
+        elif m.coin_winner_id:
             title = f"🪙 {chooser.name} wins the toss"
             desc = f"Coin flip for Game {g.number}. {who(chooser)}, choose your side."
         else:
@@ -209,22 +236,27 @@ def panel(v: MatchView, bot: AniimoBot) -> tuple[str | None, discord.Embed, disc
         )
         deadline = v.due.get("side_choice")
         e.add_field(name="Time", value=f"No answer {rel(deadline)} means Side A." if deadline else "—", inline=False)
+        earlier = "in an earlier draft of this duel" if friendly else "earlier in this series"
         if not v.tournament.fearless and g.number > 1:
             e.set_footer(text="Fearless is off, so every Aniimo is available again.")
         elif v.tournament.fearless and g.number > 1:
-            e.set_footer(text="Fearless is on: you can't re-pick an Aniimo you played earlier in this series.")
-        view = persistent_view(
+            e.set_footer(text=f"Fearless is on: you can't re-pick an Aniimo you played {earlier}.")
+        sides = [
             MatchButton("side", mid, "A", label="Take Side A · first pick", style=B.primary),
             MatchButton("side", mid, "B", label="Take Side B · counter-pick", style=B.secondary),
-        )
-        return who(chooser), e, view
+        ]
+        if friendly:
+            sides.append(call_admin)
+        return who(chooser), e, persistent_view(*sides)
     if st in (S.DRAFTING, S.PAUSED):
         e = discord.Embed(
-            title=f"Drafting Game {g.number}" + (" (paused)" if st == S.PAUSED else ""),
+            title=f"Drafting {'Draft' if friendly else 'Game'} {g.number}" + (" (paused)" if st == S.PAUSED else ""),
             colour=PURPLE,
             description="Follow the turn message below. The active player clicks **Make your choice**.",
         )
         return None, e, persistent_view(call_admin)
+    if st == S.PLAYING and friendly:
+        return None, *friendly_playing(v)
     if st == S.PLAYING:
         host, guest = v.p1, v.p2
         replay = f" (replay, attempt {g.attempt})" if g.attempt > 1 else ""
@@ -300,11 +332,80 @@ def panel(v: MatchView, bot: AniimoBot) -> tuple[str | None, discord.Embed, disc
         )
         view = persistent_view(MatchButton("next", mid, label="Next game", style=B.primary, emoji="▶️"), call_admin)
         return None, e, view
+    if st == S.DONE and friendly:
+        n = v.drafts_finished
+        e = discord.Embed(title="Duel over", colour=GOLD)
+        e.description = f"{n} draft{'s' if n != 1 else ''} played. Start another any time with `/duel`."
+        return None, e, None
     if st == S.DONE:
         winner = v.player(m.winner_id)
         e = discord.Embed(title=f"Match over · {winner.name if winner else 'no winner'}", colour=GOLD)
         return None, e, None
     e = discord.Embed(title="Waiting", colour=PURPLE, description="This match opens when its round starts.")
+    return None, e, None
+
+
+def friendly_playing(v: MatchView) -> tuple[discord.Embed, discord.ui.View]:
+    m, g = v.match, v.game
+    host, guest = v.p1, v.p2
+    e = discord.Embed(title=f"Draft {g.number} complete · play it in Aniimo", colour=GREEN)
+    room = f"{host.name} hosts the room" + (f" (`{host.uid}`)" if host.uid else "")
+    room += f" and invites {guest.name}" + (f" (`{guest.uid}`)" if guest.uid else "") + "."
+    e.description = (
+        f"{room} Use only the 4 Aniimo you drafted.\n"
+        "Want another round? **New draft** starts again, and the other player chooses the side this time."
+    )
+    idle = v.due.get("friendly_idle")
+    if idle:
+        e.set_footer(text="The duel ends by itself if nobody starts a new draft for a while.")
+        e.add_field(name="Closes", value=f"{rel(idle)} without a new draft", inline=False)
+    view = persistent_view(
+        MatchButton("fnext", m.id, label="New draft", style=B.primary, emoji="🔄"),
+        MatchButton("fend", m.id, label="End duel", emoji="🏁"),
+    )
+    return e, view
+
+
+DUEL_OUTCOMES = {
+    "declined": "✖️ {p2} declined the duel.",
+    "cancelled": "✖️ The challenge was cancelled.",
+    "expired": "⌛ The challenge expired. {p2} didn't answer in time.",
+    "ended": "🏁 Duel over · {drafts} played.",
+    "idle": "🏁 Duel over · {drafts} played. It closed after a while without a new draft.",
+    "noshow": "🏁 Duel closed: you weren't both ready in time.",
+}
+
+
+def duel_card(
+    v: MatchView, *, due=None, outcome: str | None = None, drafts: int = 0
+) -> tuple[str | None, discord.Embed, discord.ui.View | None]:
+    """The challenge message in the friendly channel: open (Accept / Decline / Cancel), running or over."""
+    t, p1, p2 = v.tournament, v.p1, v.p2
+    fear = "Fearless on: no re-picking an Aniimo you played earlier in the duel" if t.fearless else "Fearless off"
+    e = discord.Embed(colour=PURPLE)
+    e.add_field(name="Challenger", value=who(p1, mention=False))
+    e.add_field(name="Opponent", value=who(p2, mention=False))
+    if t.status == "registration":
+        e.title = "⚔️ Friendly duel challenge"
+        e.description = f"A 1v1 draft for fun: 2 bans + 4 picks each, no results or ratings.\n-# {fear}."
+        if due:
+            e.add_field(name="Expires", value=rel(due), inline=False)
+        view = persistent_view(
+            TournamentButton("duel_accept", t.id, label="Accept", style=B.success, emoji="✅"),
+            TournamentButton("duel_decline", t.id, label="Decline", style=B.danger, emoji="✖️"),
+            TournamentButton("duel_cancel", t.id, label="Cancel", emoji="↩️"),
+        )
+        return f"{who(p2)} {who(p1)} challenges you to a friendly draft duel!", e, view
+    if t.status == "running" and outcome is None:
+        e.title = "⚔️ Friendly duel · in progress"
+        room = f"<#{v.match.thread_id}>" if v.match.thread_id else "opening…"
+        e.description = f"The room is {room}. {fear}."
+        e.colour = GREEN
+        return None, e, None
+    e.title = "⚔️ Friendly duel"
+    n = f"{drafts} draft{'s' if drafts != 1 else ''}"
+    e.description = DUEL_OUTCOMES.get(outcome or "", "This duel is over.").format(p2=p2.name, drafts=n)
+    e.colour = GOLD if drafts else discord.Colour.dark_grey()
     return None, e, None
 
 
@@ -316,6 +417,8 @@ def turn_message(v: MatchView, bot: AniimoBot) -> tuple[str, discord.ui.View | N
     g = v.game
     t = v.turn
     if t is None:
+        if v.is_friendly:
+            return f"{who(v.p1)} {who(v.p2)} Draft {g.number} is complete. Have fun!", None
         return f"{who(v.p1)} {who(v.p2)} the Game {g.number} draft is complete. Good luck!", None
     side, kind = t
     player = v.turn_player
@@ -326,7 +429,7 @@ def turn_message(v: MatchView, bot: AniimoBot) -> tuple[str, discord.ui.View | N
         f"{who(player)} it's your **{kind.upper()}** · Step {v.draft.step + 1} of {len(v.order)} · "
         f"{v.phase}{deadline}{pause_note}"
     )
-    view = persistent_view(
+    items = [
         MatchButton(
             "pick",
             v.match.id,
@@ -335,10 +438,11 @@ def turn_message(v: MatchView, bot: AniimoBot) -> tuple[str, discord.ui.View | N
             style=B.primary,
             emoji="🎯",
             disabled=paused,
-        ),
-        MatchButton("admin", v.match.id, label="Call admin", emoji="🆘"),
-    )
-    return content, view
+        )
+    ]
+    if not v.is_friendly:
+        items.append(MatchButton("admin", v.match.id, label="Call admin", emoji="🆘"))
+    return content, persistent_view(*items)
 
 
 def match_won_embed(v: MatchView, info: dict) -> tuple[str, discord.Embed]:

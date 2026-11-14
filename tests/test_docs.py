@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from aniimo_pvp.__main__ import build_parser
 from aniimo_pvp.bot.client import AniimoBot
 from aniimo_pvp.bot.cogs.admin import AdminCog
+from aniimo_pvp.bot.cogs.friendly import FriendlyCog
 from aniimo_pvp.bot.cogs.roster import RosterCog
 from aniimo_pvp.bot.cogs.stats import StatsCog
 from aniimo_pvp.bot.cogs.tournament import TournamentCog
@@ -69,7 +70,7 @@ def test_code_blocks_are_balanced_and_links_resolve(path):
 @pytest.fixture
 async def command_paths():
     bot = AniimoBot(Settings(token="x", guild_id=1, admin_role_id=2, channels=Channels(admin=3, announce=4, matches=5)))
-    for cog in (TournamentCog(bot), AdminCog(bot), StatsCog(bot), RosterCog(bot)):
+    for cog in (TournamentCog(bot), AdminCog(bot), StatsCog(bot), RosterCog(bot), FriendlyCog(bot)):
         await bot.add_cog(cog)
 
     def walk(p, path):
@@ -95,7 +96,7 @@ async def test_slash_commands_and_options_in_the_docs_exist(path, command_paths)
     paths, options = command_paths
     text = code_text(path.read_text(encoding="utf-8"))
     found = re.findall(r"(?<![\w/.])/(tournament|admin|stats|roster)\s+([a-z][a-z-]+)", text)
-    found += [(m, "") for m in re.findall(r"(?<![\w/.])/(leaderboard|profile)\b", text)]
+    found += [(m, "") for m in re.findall(r"(?<![\w/.])/(leaderboard|profile|duel-test|duel|register)\b(?!-)", text)]
     assert found, "expected slash commands in the doc"
     for group, sub in found:
         name = f"{group} {sub}".strip()
