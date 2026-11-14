@@ -218,3 +218,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# aniimo-pvp local files
+config.yaml
+data/*.db
+data/*.db-*
+data/backups/
+data/emoji_cache.json
+logs/
+assets/aniimo/*
+!assets/aniimo/.gitkeep
+assets/elements/*
+!assets/elements/.gitkeep
+tests/output/
+data/roster.csv
+data/roster.wiki.csv
+data/roster.csv.bak-*
+preview/

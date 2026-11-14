@@ -1,0 +1,550 @@
+# System Design — Aniimo 1v1 Draft Tournament Bot
+
+A Discord-only bot, written in Python and run on the organiser's PC, that runs
+single-elimination Aniimo 1v1 tournaments with a ban/pick draft. Players never
+leave Discord. The visual part is a draft-board image rendered with real Aniimo
+thumbnails.
+
+## 1. Decisions
+
+| Area | Decision |
+|---|---|
+| Interface | Discord only: slash commands, embeds, buttons, select menus, rendered PNGs |
+| Hosting | Organiser's PC, Python 3.11+. Outbound gateway connection only, so no public URL |
+| Bracket | Single elimination, random shuffle, byes spread so no bye meets a bye |
+| Format | Player cap 8 / 16 / 32 / 64 / 128 + one standard format (Quick, Standard, Championship) that sets Bo per round, counted back from the final (§3.4) |
+| Draft | 2 bans + 4 picks per player, two-phase split order, exclusive picks |
+| Side choice | G1 coin flip, then winner chooses · G2+ previous game's loser chooses |
+| Timer | 45 s/step; timeout → ban skipped, pick random |
+| Match room | Private thread per match in `#matches` |
+| Results | Report → opponent confirms/disputes → auto-confirm after 10 min |
+| No-show | Reminder at 10 min, admin decides at 15 min |
+| Next round | Admin clicks **▶ Start Round N** |
+| Extras | Live draft feed, pick/ban stats, Fearless toggle, ELO leaderboard |
+| Friendly duels | Anyone runs `/duel @friend` in `#friendly`. A 1v1 room for drafts only: no results, ratings, stats or announcements; New draft or End duel after each draft (§11) |
+| Look | Side A blue, Side B orange (colour-blind safe) · a fresh turn message per step so the active player is pinged · picker previews the selected Aniimo · result screenshots are posted in the thread |
+| Mockups | Approved screens: [Aniimo Draft UI canvas](https://claude.ai/artifact/7112nacYyipqnhKMCC3ELu) |
+
+## 2. Architecture
+
+```mermaid
+flowchart LR
+  subgraph Discord["Discord (cloud)"]
+    U1(["👤 Players"])
+    U2(["🛡️ Admins"])
+    CH["admin · announce · live-draft channels<br/>private match threads"]
+  end
+  subgraph PC["Organiser PC · python -m aniimo_pvp"]
+    COGS["cogs + discord_ui<br/>commands · buttons · menus"]
+    SVC["services<br/>tournament · match · draft · scheduler"]
+    DOM["domain (pure Python)<br/>draft · bracket · series · elo · csv"]
+    REN["render (Pillow)<br/>board · bracket images"]
+    DB[("SQLite<br/>data/aniimo.db")]
+    FILES[/"roster.csv<br/>assets/aniimo/*.png"/]
+  end
+  U1 & U2 <--> CH
+  CH <-->|"gateway websocket<br/>outbound only"| COGS
+  COGS --> SVC
+  SVC --> DOM
+  SVC --> REN
+  SVC <--> DB
+  FILES --> SVC
+  FILES --> REN
+```
+
+| Layer | Responsibility | Discord-aware? |
+|---|---|---|
+| `cogs/`, `discord_ui/` | Commands, views, permission checks, message edits | yes |
+| `services/` | Orchestrate a use case: load state → call domain → persist → notify | via interfaces |
+| `domain/` | Rules: draft order and legality, bracket and byes, series scoring, Fearless, ELO, CSV parsing | no, unit-tested |
+| `render/` | Board and bracket PNGs, placeholder thumbnails | no |
+| `db/` | SQLAlchemy models + repository | no |
+
+## 3. User flows
+
+### 3.1 Admin
+
+```mermaid
+flowchart TD
+  A0["Run /tournament create name"] --> A["Step 1 panel: player cap · format · fearless<br/>live round preview"]
+  A --> B["Next: add players<br/>paste or attach CSV in admin channel"]
+  B --> C{"Preview OK?"}
+  C -- "errors listed" --> B
+  C -- "✅ Confirm players" --> D["Run /tournament start"]
+  D --> E["Bot shuffles · posts bracket + R1 table<br/>opens R1 match threads"]
+  E --> F["Monitor: disputes · no-shows · Call admin"]
+  F --> G{"Round complete?"}
+  G -- "no" --> F
+  G -- "yes" --> H["Click ▶ Start Round N"] --> F
+  G -- "final done" --> I(["🏆 Champion · stats · ELO posted"])
+```
+
+### 3.2 Player
+
+```mermaid
+flowchart TD
+  P0(["Pinged: match room open"]) --> P1["Open private thread<br/>copy opponent's Aniimo UID"]
+  P1 --> P2["Add each other in-game<br/>player 1 hosts the room"]
+  P2 --> P3["Click ✅ Ready"]
+  P3 --> P4{"Who picks the side?<br/>G1 coin flip · G2+ previous loser"}
+  P4 --> P5["Chooser takes Side A or Side B"]
+  P5 --> P6["Draft · 12 steps · 45 s each<br/>🎯 Make your choice opens a private picker"]
+  P6 --> P7["Play the game in Aniimo"]
+  P7 --> P8["🏆 Report result · opponent confirms"]
+  P8 --> P9{"Series decided?"}
+  P9 -- "no" --> P10["▶ Next game"] --> P4
+  P9 -- "won" --> P11(["Advance · wait for next round"])
+  P9 -- "lost" --> P12(["Eliminated · stats + rating updated"])
+  P7 -. "disconnect / bug" .-> P13["🔁 Rematch · opponent accepts"]
+  P13 -- "same teams" --> P7
+  P13 -- "new draft" --> P6
+```
+
+### 3.3 Registration → Round 1
+
+```mermaid
+sequenceDiagram
+  actor Admin
+  participant Bot
+  participant AdminCh as Admin channel
+  participant Ann as Announce channel
+  participant Th as Match threads
+  Admin->>Bot: /tournament create (name)
+  Bot-->>AdminCh: Step 1 panel: cap, format, fearless + round preview
+  Admin->>Bot: Pick cap + format · Next: add players
+  Bot-->>AdminCh: Step 2: paste the CSV · status REGISTRATION
+  Admin->>AdminCh: Paste CSV or attach .csv
+  Bot->>Bot: Parse + validate (member? duplicate? UID?)
+  Bot-->>AdminCh: Preview: N players, bracket size, byes, errors
+  Admin->>Bot: ✅ Confirm players
+  Admin->>Bot: /tournament start
+  Bot->>Bot: Shuffle (logged seed) · build bracket · resolve byes
+  Bot->>Ann: Bracket image + Round 1 table with mentions
+  loop each Round 1 match
+    Bot->>Th: Create private thread · add players + admins
+    Bot->>Th: UID card + control panel · ping players
+  end
+```
+
+### 3.4 Formats
+
+The admin picks a player cap and one standard format. The format sets the
+series length per round, counted back from the final, so it fits any bracket
+size up to 128.
+
+| Format | Round of 128 / 64 / 32 | Round of 16 | Quarterfinal | Semifinal | Final |
+|---|---|---|---|---|---|
+| Quick | Bo1 | Bo1 | Bo1 | Bo1 | Bo3 |
+| **Standard** (default) | Bo1 | Bo3 | Bo3 | Bo3 | Bo5 |
+| Championship | Bo3 | Bo3 | Bo3 | Bo5 | Bo5 |
+
+| Cap | First round | Rounds | Matches | Max games Quick / Standard / Championship |
+|---|---|---|---|---|
+| 8 | Quarterfinal | 3 | 7 | 9 / 23 / 27 |
+| 16 | Round of 16 | 4 | 15 | 17 / 47 / 51 |
+| 32 | Round of 32 | 5 | 31 | 33 / 63 / 99 |
+| 64 | Round of 64 | 6 | 63 | 65 / 95 / 195 |
+| 128 | Round of 128 | 7 | 127 | 129 / 159 / 387 |
+
+* The cap is a maximum. The bracket uses the next power of two above the real
+  player count (7 players with a 32 cap → 8 slots; 27 players → 32 slots, 5 byes).
+* A CSV with more players than the cap is rejected. 128 is the hard maximum.
+* Cap, format and Fearless can change until **Start**, then they're locked.
+  Each match stores its own `bo` when it's created.
+
+## 4. Match lifecycle
+
+One **control panel** message per match; its buttons always match the current state.
+
+```mermaid
+stateDiagram-v2
+  state "Game decided" as Decided
+  [*] --> Waiting : room opened
+  Waiting --> SideChoice : both Ready
+  Waiting --> NoShow : 15 min
+  NoShow --> Waiting : admin extends 10 min
+  NoShow --> Done : admin gives win or DQ
+  SideChoice --> Drafting : side chosen or 2 min timeout
+  Drafting --> Paused : admin pause
+  Paused --> Drafting : admin resume
+  Drafting --> Playing : step 12 locked
+  Playing --> Playing : Rematch same teams (same game, attempt +1)
+  Playing --> Drafting : Rematch new draft (same game, attempt +1)
+  Playing --> Confirming : Report result
+  Confirming --> Disputed : opponent disputes
+  Confirming --> Decided : confirmed or 10 min
+  Disputed --> Decided : admin set-result
+  Disputed --> Playing : admin replay (attempt +1)
+  Decided --> BetweenGames : series open (Bo3 or Bo5 only)
+  Decided --> Done : series won (Bo1 always)
+  BetweenGames --> SideChoice : Next game (game +1)
+  Done --> [*] : winner advances
+```
+
+| State | Panel buttons | Who can click |
+|---|---|---|
+| Waiting | ✅ Ready · 🆘 Call admin | both players |
+| SideChoice | Side A (first pick) · Side B (counter-pick) | chooser |
+| Drafting | 🎯 Make your choice | active player (others get a private "not your turn") |
+| Playing | 🏆 Report result · 🔁 Rematch · 🆘 Call admin | both players |
+| Confirming | ✅ Confirm · ⚠️ Dispute | opponent of reporter |
+| BetweenGames (Bo3/Bo5 only) | ▶ Next game · 🆘 Call admin | both players |
+| NoShow / Disputed | Give win to X · Extend · DQ both / set-result | admin role |
+
+### 4.1 Rematch vs Next game
+
+The two buttons are separate actions and write different rows, so the series
+score can always be recomputed from the database.
+
+| | 🔁 Rematch | ▶ Next game |
+|---|---|---|
+| Meaning | Replay the **current** game (disconnect, bug) | Start the **next** game of the series |
+| `GAME` row | Same `number`, `attempt + 1`; the old attempt becomes `voided` | `number + 1`, `attempt = 1` |
+| Draft | Same teams → copied (`draft_source_id`) · New draft → restarts at step 1 | Fresh draft |
+| Score | Unchanged | Unchanged until this game is confirmed |
+| When | While `Playing` (before a result is reported); opponent accepts or admin forces | After the previous game is `confirmed` and nobody has the wins needed |
+| Series length | Bo1, Bo3, Bo5 | **Bo3 and Bo5 only**, never in Bo1 |
+| Side | Same sides as the voided attempt | Loser of the previous confirmed game chooses |
+
+Example, Bo3, with one rematch:
+
+| Game | Attempt | Status | Winner | Draft | Score |
+|---|---|---|---|---|---|
+| 1 | 1 | confirmed | Luna | new | 1–0 |
+| 2 | 1 | voided (rematch, same teams) | — | new | 1–0 |
+| 2 | 2 | confirmed | Kai | copied from attempt 1 | 1–1 |
+| 3 | 1 | confirmed | Luna | new | 2–1, match over |
+
+* **Score** = count of `confirmed` games per player. Wins needed =
+  ⌈Bo / 2⌉ (Bo1 → 1, Bo3 → 2, Bo5 → 3).
+* **Voided attempts** never count toward the score, ELO, Fearless or pick/ban stats.
+* A result that's already reported can't be rematched by players. They
+  dispute it, and the admin either sets the result or runs `/admin replay`.
+
+## 5. Draft
+
+### 5.1 Order: two-phase split
+
+```mermaid
+flowchart TB
+  subgraph B1["Phase 1 · Ban"]
+    direction LR
+    s1["1 · A ban"] --> s2["2 · B ban"]
+  end
+  subgraph K1["Phase 1 · Pick"]
+    direction LR
+    s3["3 · A pick"] --> s4["4 · B pick"] --> s5["5 · B pick"] --> s6["6 · A pick"]
+  end
+  subgraph B2["Phase 2 · Ban"]
+    direction LR
+    s7["7 · B ban"] --> s8["8 · A ban"]
+  end
+  subgraph K2["Phase 2 · Pick"]
+    direction LR
+    s9["9 · B pick"] --> s10["10 · A pick"] --> s11["11 · A pick"] --> s12["12 · B pick"]
+  end
+  B1 --> K1 --> B2 --> K2
+  classDef sideA fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef sideB fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class s1,s3,s6,s8,s10,s11 sideA
+  class s2,s4,s5,s7,s9,s12 sideB
+```
+
+* **A** (blue) gets the first ban and first pick. **B** (red) gets the first
+  ban of phase 2 and the last pick (counter-pick).
+* The order is a config list, `[(side, kind), …]`, so it can be changed without code changes.
+* **Legal choice** = in roster, not banned, not picked by anyone in this game,
+  and (if Fearless) not picked by this player in an earlier **confirmed** game
+  of the series.
+
+### 5.2 One turn
+
+```mermaid
+sequenceDiagram
+  actor P as Active player
+  actor O as Opponent
+  participant Bot
+  participant T as Match thread
+  participant L as Live-draft channel
+  Bot->>T: New turn message: ping · board image · countdown · 🎯 button (old one deleted)
+  O->>Bot: Clicks 🎯
+  Bot-->>O: Private: not your turn
+  P->>Bot: Clicks 🎯
+  Bot-->>P: Private picker: element menu
+  P->>Bot: Chooses element
+  Bot-->>P: Aniimo menu (legal only, with icons) · 🔍 search
+  P->>Bot: Chooses Aniimo
+  Bot-->>P: Preview: large thumbnail + name · 🔒 Lock in
+  P->>Bot: 🔒 Lock in
+  Bot->>Bot: Lock match · check turn + step id + legality · save · cancel timer
+  Bot->>T: Delete turn message · post next turn (ping + board)
+  Bot->>L: Edit live board
+  alt 45 s timeout
+    Bot->>Bot: Ban → skip · Pick → random legal (tagged auto)
+    Bot->>T: Post next turn (board shows the auto tag)
+  end
+```
+
+### 5.3 Board image (1280×720, Pillow)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ AniiCup #1 · R1 · M3 · Game 2                  Series  Luna 1–0 Kai│
+├──────────────────────┬──────────────────────┬──────────────────────┤
+│ LUNA (A)  🟦          │   PHASE 2 · PICK     │          🟥  KAI (B)  │
+│ BANS [✕][✕]           │   ●●●●●●●●○○○○       │           [✕][✕] BANS │
+│ [img][img][img][ ··· ]│   ▶ KAI picking      │ [img][img][ ··· ][···]│
+└──────────────────────┴──────────────────────┴──────────────────────┘
+```
+
+Side A is blue and Side B orange. Bans are greyed with a red ✕, the active slot glows, and auto actions are tagged.
+A missing thumbnail falls back to a placeholder in the element colour with the
+creature's initials.
+
+## 6. Results and advancement
+
+```mermaid
+sequenceDiagram
+  actor R as Reporter
+  actor O as Opponent
+  participant Bot
+  participant T as Match thread
+  participant Ann as Announce channel
+  actor Adm as Admin role
+  R->>Bot: 🏆 Report result (winner) · a screenshot posted in the thread is attached
+  Bot->>T: "Luna reported: Luna won G1" · Confirm / Dispute
+  alt Opponent confirms or 10 min pass
+    Bot->>Bot: Record game · update series score
+  else Opponent disputes
+    Bot->>T: Ping admin role with state
+    Adm->>Bot: /admin set-result or /admin replay
+  end
+  alt Series won
+    Bot->>T: Winner card · archive thread
+    Bot->>Bot: Advance winner · update ELO
+    opt Last match of the round
+      Bot->>Ann: Updated bracket image
+      Bot->>Adm: ▶ Start Round N
+    end
+  else Series continues (Bo3 or Bo5 only)
+    Bot->>T: Score + ▶ Next game (loser chooses side)
+  end
+```
+
+## 7. Data model (SQLite)
+
+```mermaid
+erDiagram
+  PLAYER ||--o{ ENTRY : joins
+  TOURNAMENT ||--o{ ENTRY : has
+  TOURNAMENT ||--o{ MATCH : contains
+  MATCH ||--|{ GAME : "series of"
+  GAME ||--o{ DRAFT_ACTION : records
+  MATCH |o--o| MATCH : "winner feeds"
+  TOURNAMENT ||--o{ AUDIT_LOG : logs
+  PLAYER {
+    bigint discord_id PK
+    string aniimo_uid UK
+    string display_name
+    int rating
+    int wins
+    int losses
+  }
+  TOURNAMENT {
+    int id PK
+    bigint guild_id
+    string name
+    string status "setup, registration, running, finished, cancelled"
+    int player_cap "8, 16, 32, 64, 128"
+    string format "quick, standard, championship"
+    bool fearless
+    string rng_seed
+  }
+  ENTRY {
+    int tournament_id FK
+    bigint discord_id FK
+    int seed
+    string status "active, eliminated, dq"
+  }
+  MATCH {
+    int id PK
+    int tournament_id FK
+    int round
+    int slot
+    bigint p1_id FK
+    bigint p2_id FK
+    bigint winner_id FK
+    string state
+    int bo "from the format, per round"
+    bigint thread_id
+    bigint panel_msg_id
+    bigint live_msg_id
+    int next_match_id FK
+  }
+  GAME {
+    int id PK
+    int match_id FK
+    int number "1 to Bo"
+    int attempt "1, +1 per rematch"
+    bigint side_a_id FK
+    bigint winner_id FK
+    string status "drafting, playing, reported, confirmed, disputed, voided"
+    string void_reason "rematch_same_teams, rematch_new_draft, admin_replay"
+    int draft_source_id FK "set when teams are copied"
+    bigint reported_by
+    string screenshot_url
+  }
+  DRAFT_ACTION {
+    int id PK
+    int game_id FK
+    int step
+    bigint player_id FK
+    string kind "ban, pick, skip"
+    string aniimo_slug
+    bool auto
+  }
+  JOB {
+    int id PK
+    string kind
+    int ref_id
+    datetime due_at
+    string status
+  }
+  AUDIT_LOG {
+    int id PK
+    int tournament_id FK
+    bigint actor_id
+    string action
+    json payload
+    datetime created_at
+  }
+```
+
+The roster (Aniimo name, element, role, image) lives in `data/roster.csv`, not
+the database. Stats join on `aniimo_slug`.
+
+`GAME` is unique on `(match_id, number, attempt)`, and at most one attempt per
+`number` is not `voided`. The series score, ELO, Fearless and stats read
+`confirmed` games only (§4.1).
+
+## 8. Timers and restart safety
+
+All timers are rows in `JOB`, run by one asyncio scheduler, so they survive a restart.
+
+| Job | Due after | On fire |
+|---|---|---|
+| `draft_step` | 45 s | ban → skip · pick → random legal |
+| `side_choice` | 2 min | chooser gets Side A |
+| `noshow_reminder` | 10 min | ping players who aren't ready |
+| `noshow_escalate` | 15 min | admin buttons: Give win · Extend · DQ both |
+| `auto_confirm` | 10 min | reported result accepted |
+| `rematch_offer` | 2 min | offer expires |
+| `challenge_expire` | 10 min | friendly: an unanswered `/duel` challenge expires |
+| `friendly_idle` | 30 min | friendly: no new draft after a finished one → the duel ends |
+
+In a friendly duel `noshow_escalate` ends the duel instead of calling an admin.
+
+* **Restart rule:** a job that came due while the bot was offline is restarted
+  with its full duration, because players couldn't click anything during the downtime.
+* **Persistent buttons:** custom IDs look like `ap:<action>:<match>:<game>:<step>`
+  (discord.py `DynamicItem`), so buttons keep working after a restart.
+* **Stale or double clicks:** a per-match `asyncio.Lock` plus the step ID in the
+  custom ID. An old button replies "this turn is over" and changes nothing.
+
+## 9. Discord surface
+
+| Channel | Content |
+|---|---|
+| `#admin` | CSV paste, previews, admin alerts, Start Round N |
+| `#announce` | Bracket image + round tables, champion post |
+| `#matches` | Private thread per match: UID card, panel, board |
+| `#live-draft` | One live board per active match, edited each step |
+| `#friendly` | `/duel` challenge cards + a private thread per duel (optional) |
+
+| Command | Who |
+|---|---|
+| `/tournament create · players · start · status · cancel` | admin |
+| `/admin undo · pause · resume · set-result · replay · dq · swap · extend` | admin |
+| `/roster reload` | admin |
+| `/stats aniimo · /stats player · /leaderboard · /profile` | everyone |
+| `/duel · /register` | everyone (`/duel` only in `#friendly`) |
+| `/duel-test` | dev mode only |
+
+Bot setup: Message Content intent (to read pasted CSV). Permissions: View
+Channels, Send Messages, Send in Threads, Create Private Threads, Manage
+Threads, Embed Links, Attach Files, Read History, Mention roles.
+
+## 10. Roster, thumbnails and element icons
+
+* **Source:** the official wiki (`wiki.aniimo.com`). `aniimo-pvp fetch-assets` reads the creature index from the
+  page's embedded data, downloads each thumbnail (the small square head icon, or the full art as a fallback) and the
+  wiki's element sprite, validates every file with Pillow and re-saves it as a plain PNG. Only the wiki's own hosts
+  are allowed, also across redirects. Nothing is committed: `assets/` and the generated roster are git-ignored.
+* `data/roster.csv`: `slug,name,element,role,image`. Two elements are written `Fire/Dark`; such an Aniimo is listed
+  under both elements in the picker. A hand-edited roster is never overwritten by accident.
+* `assets/aniimo/<slug>.png` are the thumbnails and `assets/elements/<element>.png` the nine element signs
+  (a coloured disc with the wiki's glyph, in the wiki's colours). A missing file falls back to an initials badge or a
+  generated element badge.
+* On startup and `/roster reload`, the bot uploads the thumbnails and the element icons as **application emojis**
+  (up to 2000 per bot, no server boost) and skips unchanged images by content hash. Menus show these icons, and
+  board images use the full PNGs with a tinted backdrop behind transparent art.
+
+## 11. Friendly duels
+
+A quick 1v1 draft between friends, outside any tournament. It reuses the match room, draft, board,
+timers and restart safety, and drops everything that is about competition.
+
+```mermaid
+sequenceDiagram
+  actor A as Challenger
+  actor B as Friend
+  participant F as Friendly channel
+  participant R as Duel room (private thread)
+  A->>F: /duel @B (fearless optional)
+  F-->>B: challenge card: Accept · Decline (A can Cancel) · expires in 10 min
+  B->>F: Accept
+  F->>R: open room: UID card + Ready
+  loop each draft
+    R->>R: Ready (first draft only) → side choice → 12-step draft → board
+    R-->>A: New draft · End duel
+    Note over R: New draft: the other player chooses the side
+  end
+  A->>R: End duel (confirm)
+  R-->>F: card: "Duel over · N drafts played"
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> Challenge: /duel
+  Challenge --> Cancelled: Decline · Cancel · 10 min
+  Challenge --> Room: Accept
+  Room --> Drafting: both Ready → side choice
+  Room --> Closed: not ready in 15 min
+  Drafting --> Played: draft complete
+  Played --> Drafting: New draft
+  Played --> Closed: End duel · 30 min idle
+  Drafting --> Closed: End duel (draft dropped)
+  Cancelled --> [*]
+  Closed --> [*]
+```
+
+| | Tournament match | Friendly duel |
+|---|---|---|
+| Who starts it | Admin, from the bracket | Anyone, `/duel` in `#friendly` |
+| Room | Private thread in `#matches`, not invitable | Private thread in `#friendly`; players may mention friends to watch |
+| Series | Bo1/Bo3/Bo5 from the format | Unlimited drafts, one at a time |
+| Side choice | G1 coin flip, then the loser | Draft 1 coin flip, then the players take turns |
+| Results | Report → Confirm/Dispute | None |
+| Rematch | Same teams / new draft, opponent accepts | Not needed: **New draft** |
+| Admin | Call admin, no-show and dispute alerts | None: either player can **End duel** |
+| Ratings, stats, announcements, live feed | Yes | No (`/profile` shows a friendly draft count) |
+| Fearless | Per tournament | Per duel (`fearless` option) |
+
+**Data.** A duel is a `TOURNAMENT` row with `kind = friendly` (bracket size 2) holding one `MATCH` (Bo1).
+Its drafts are `GAME` rows numbered 1, 2, 3…; a played-out draft is `finished` and an unfinished one is
+`voided` with reason `duel_ended`. Tournament lookups (`active`, `latest`, "one tournament at a time")
+ignore friendly rows, and stats only read `confirmed` games, so duels never mix into tournament data.
+Each player has at most one open duel. Older databases get the `kind` column on startup.
+
+**UIDs.** Duel players aren't in a CSV, so `/register uid:` stores a player's Aniimo UID for the room card.
+

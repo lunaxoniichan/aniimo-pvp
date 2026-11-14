@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aniimo-pvp"
+version = "0.1.0"
+description = "Discord bot for Aniimo 1v1 ban/pick draft tournaments"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "See LICENSE" }
+dependencies = [
+  "discord.py>=2.6,<3",
+  "Pillow>=10.4",
+  "SQLAlchemy[asyncio]>=2.0.30",
+  "aiosqlite>=0.20",
+  "pydantic>=2.7,<3",
+  "PyYAML>=6",
+  "python-dotenv>=1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[project.scripts]
+aniimo-pvp = "aniimo_pvp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src", "."]  # "." so tests can import shared helpers from tests/conftest.py
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM"]
+ignore = ["SIM105", "B008"]
