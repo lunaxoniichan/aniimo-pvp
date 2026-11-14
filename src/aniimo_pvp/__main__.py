@@ -195,6 +195,8 @@ def cmd_preview(args) -> int:
 
 
 def cmd_run(args) -> int:
+    import discord
+
     from .bot.client import AniimoBot
     from .logging_setup import setup_logging
 
@@ -214,8 +216,29 @@ def cmd_run(args) -> int:
         return 1
     setup_logging(settings.paths.logs_dir)
     bot = AniimoBot(settings)
-    bot.run(settings.token, log_handler=None)
+    try:
+        bot.run(settings.token, log_handler=None)
+    except discord.PrivilegedIntentsRequired:
+        print(INTENT_HELP)
+        return 1
+    except discord.LoginFailure:
+        print(TOKEN_HELP)
+        return 1
     return 0
+
+
+INTENT_HELP = """
+✗ Discord refused to connect: the Message Content Intent is off for this bot.
+  The bot needs it to read the player CSV you paste in #admin. To turn it on:
+    1. Open https://discord.com/developers/applications and choose your application
+    2. Go to Bot, scroll to Privileged Gateway Intents
+    3. Turn on Message Content Intent, then click Save Changes at the bottom
+  Then start the bot again."""
+
+TOKEN_HELP = """
+✗ Discord rejected the bot token in .env.
+  Open https://discord.com/developers/applications → your application → Bot → Reset Token,
+  copy the new token into .env as DISCORD_TOKEN=... (no quotes, no spaces), and start the bot again."""
 
 
 def build_parser() -> argparse.ArgumentParser:

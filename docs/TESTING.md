@@ -42,7 +42,8 @@ your phone, emoji uploads, and rate limits.
 
 1. Open <https://discord.com/developers/applications> and click **New Application**.
 2. Go to **Bot**. Click **Reset Token** and copy the token somewhere safe (you need it in step B4).
-   Turn on **Message Content Intent** and save.
+   Scroll down to **Privileged Gateway Intents**, turn on **Message Content Intent**, and click **Save Changes**
+   at the bottom of the page. Without it the bot can't start.
 3. Copy your **Application ID** (page *General Information*). Put it in place of `YOUR_APP_ID` below,
    open the link in your browser, choose your test server and click **Authorise**:
 
@@ -788,6 +789,8 @@ Details of every error are in `logs/bot.log` (in the project folder).
 | Problem | What to do |
 |---|---|
 | `check` shows ✗ | Fill in the token or ID it names, then run `check` again |
+| "Message Content Intent is off" or `PrivilegedIntentsRequired` when starting | Developer Portal → your application → **Bot** → **Privileged Gateway Intents** → turn on **Message Content Intent** → **Save Changes**, then start the bot again |
+| "Discord rejected the bot token" | **Bot** → **Reset Token**, put the new token in `.env`, start again |
 | Slash commands missing | Check `guild_id`, make sure you invited the bot with the link in step A3, restart the bot, wait a minute |
 | Nothing happens when I paste the CSV | Message Content Intent is off, or you aren't an admin, or the tournament is already past the player step |
 | "Only tournament admins can do that" | You need the `Tournament Admin` role (or the Administrator permission) |

@@ -126,3 +126,29 @@ def test_cli_init_downloads_assets_but_survives_a_failure(tmp_path, monkeypatch,
     calls.clear()
     assert main(["init", "--no-assets"]) == 0
     assert not calls
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [("intent", "Message Content Intent is off"), ("token", "Discord rejected the bot token")],
+)
+def test_run_explains_portal_mistakes_instead_of_a_traceback(tmp_path, monkeypatch, capsys, error, expected):
+    import discord
+
+    from aniimo_pvp.bot.client import AniimoBot
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "roster.csv").write_text("name,element\nMon,Fire\n")
+    (tmp_path / "config.yaml").write_text(
+        "guild_id: 1\nadmin_role_id: 2\nchannels: {admin: 3, announce: 4, matches: 5}\n"
+    )
+    monkeypatch.setenv("DISCORD_TOKEN", "abc")
+
+    def refuse(self, token, **kw):
+        raise discord.PrivilegedIntentsRequired(None) if error == "intent" else discord.LoginFailure("bad")
+
+    monkeypatch.setattr(AniimoBot, "run", refuse)
+    assert main(["run"]) == 1
+    out = capsys.readouterr().out
+    assert expected in out and "Traceback" not in out

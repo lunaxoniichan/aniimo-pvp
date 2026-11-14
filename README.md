@@ -88,7 +88,8 @@ public address. Keep the PC running during the tournament.
 1. Open <https://discord.com/developers/applications> → **New Application** (e.g. "Aniimo Draft").
 2. **Bot** page:
    - **Reset Token** → copy it into `.env` as `DISCORD_TOKEN=...` (keep it secret).
-   - Turn on **Message Content Intent**, so the bot can read the player CSV you paste.
+   - Under **Privileged Gateway Intents**, turn on **Message Content Intent** and click **Save Changes**,
+     so the bot can read the player CSV you paste. The bot won't start without it.
 3. **Invite the bot**. Replace `YOUR_APP_ID` with the Application ID from the General Information page:
 
    ```
@@ -301,6 +302,7 @@ You can mix in real accounts (for example a second Discord account) to check pin
 | Problem | Fix |
 |---|---|
 | `aniimo-pvp check` shows ✗ | Fill in the missing ID or token it names. |
+| "Message Content Intent is off" (`PrivilegedIntentsRequired`) on start | Developer Portal → Bot → Privileged Gateway Intents → turn on Message Content Intent → Save Changes. |
 | Slash commands don't appear | Check that `guild_id` is right and the invite included `applications.commands`; restart the bot. |
 | Pasting the CSV does nothing | Turn on Message Content Intent; paste in `#admin` as someone with the admin role. |
 | "Couldn't create a private thread" | Give the bot Create Private Threads + Send Messages in Threads in `#matches`. |
