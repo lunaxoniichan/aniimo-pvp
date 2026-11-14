@@ -21,6 +21,7 @@ thumbnails.
 | No-show | Reminder at 10 min, admin decides at 15 min |
 | Next round | Admin clicks **▶ Start Round N** |
 | Extras | Live draft feed, pick/ban stats, Fearless toggle, ELO leaderboard |
+| Friendly duels | Anyone runs `/duel @friend` in `#friendly`. A 1v1 room for drafts only: no results, ratings, stats or announcements; New draft or End duel after each draft (§11) |
 | Look | Side A blue, Side B orange (colour-blind safe) · a fresh turn message per step so the active player is pinged · picker previews the selected Aniimo · result screenshots are posted in the thread |
 | Mockups | Approved screens: [Aniimo Draft UI canvas](https://claude.ai/artifact/7112nacYyipqnhKMCC3ELu) |
 
@@ -438,6 +439,10 @@ All timers are rows in `JOB`, run by one asyncio scheduler, so they survive a re
 | `noshow_escalate` | 15 min | admin buttons: Give win · Extend · DQ both |
 | `auto_confirm` | 10 min | reported result accepted |
 | `rematch_offer` | 2 min | offer expires |
+| `challenge_expire` | 10 min | friendly: an unanswered `/duel` challenge expires |
+| `friendly_idle` | 30 min | friendly: no new draft after a finished one → the duel ends |
+
+In a friendly duel `noshow_escalate` ends the duel instead of calling an admin.
 
 * **Restart rule:** a job that came due while the bot was offline is restarted
   with its full duration, because players couldn't click anything during the downtime.
@@ -454,6 +459,7 @@ All timers are rows in `JOB`, run by one asyncio scheduler, so they survive a re
 | `#announce` | Bracket image + round tables, champion post |
 | `#matches` | Private thread per match: UID card, panel, board |
 | `#live-draft` | One live board per active match, edited each step |
+| `#friendly` | `/duel` challenge cards + a private thread per duel (optional) |
 
 | Command | Who |
 |---|---|
@@ -461,6 +467,8 @@ All timers are rows in `JOB`, run by one asyncio scheduler, so they survive a re
 | `/admin undo · pause · resume · set-result · replay · dq · swap · extend` | admin |
 | `/roster reload` | admin |
 | `/stats aniimo · /stats player · /leaderboard · /profile` | everyone |
+| `/duel · /register` | everyone (`/duel` only in `#friendly`) |
+| `/duel-test` | dev mode only |
 
 Bot setup: Message Content intent (to read pasted CSV). Permissions: View
 Channels, Send Messages, Send in Threads, Create Private Threads, Manage
@@ -480,3 +488,63 @@ Threads, Embed Links, Attach Files, Read History, Mention roles.
 * On startup and `/roster reload`, the bot uploads the thumbnails and the element icons as **application emojis**
   (up to 2000 per bot, no server boost) and skips unchanged images by content hash. Menus show these icons, and
   board images use the full PNGs with a tinted backdrop behind transparent art.
+
+## 11. Friendly duels
+
+A quick 1v1 draft between friends, outside any tournament. It reuses the match room, draft, board,
+timers and restart safety, and drops everything that is about competition.
+
+```mermaid
+sequenceDiagram
+  actor A as Challenger
+  actor B as Friend
+  participant F as Friendly channel
+  participant R as Duel room (private thread)
+  A->>F: /duel @B (fearless optional)
+  F-->>B: challenge card: Accept · Decline (A can Cancel) · expires in 10 min
+  B->>F: Accept
+  F->>R: open room: UID card + Ready
+  loop each draft
+    R->>R: Ready (first draft only) → side choice → 12-step draft → board
+    R-->>A: New draft · End duel
+    Note over R: New draft: the other player chooses the side
+  end
+  A->>R: End duel (confirm)
+  R-->>F: card: "Duel over · N drafts played"
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> Challenge: /duel
+  Challenge --> Cancelled: Decline · Cancel · 10 min
+  Challenge --> Room: Accept
+  Room --> Drafting: both Ready → side choice
+  Room --> Closed: not ready in 15 min
+  Drafting --> Played: draft complete
+  Played --> Drafting: New draft
+  Played --> Closed: End duel · 30 min idle
+  Drafting --> Closed: End duel (draft dropped)
+  Cancelled --> [*]
+  Closed --> [*]
+```
+
+| | Tournament match | Friendly duel |
+|---|---|---|
+| Who starts it | Admin, from the bracket | Anyone, `/duel` in `#friendly` |
+| Room | Private thread in `#matches`, not invitable | Private thread in `#friendly`; players may mention friends to watch |
+| Series | Bo1/Bo3/Bo5 from the format | Unlimited drafts, one at a time |
+| Side choice | G1 coin flip, then the loser | Draft 1 coin flip, then the players take turns |
+| Results | Report → Confirm/Dispute | None |
+| Rematch | Same teams / new draft, opponent accepts | Not needed: **New draft** |
+| Admin | Call admin, no-show and dispute alerts | None: either player can **End duel** |
+| Ratings, stats, announcements, live feed | Yes | No (`/profile` shows a friendly draft count) |
+| Fearless | Per tournament | Per duel (`fearless` option) |
+
+**Data.** A duel is a `TOURNAMENT` row with `kind = friendly` (bracket size 2) holding one `MATCH` (Bo1).
+Its drafts are `GAME` rows numbered 1, 2, 3…; a played-out draft is `finished` and an unfinished one is
+`voided` with reason `duel_ended`. Tournament lookups (`active`, `latest`, "one tournament at a time")
+ignore friendly rows, and stats only read `confirmed` games, so duels never mix into tournament data.
+Each player has at most one open duel. Older databases get the `kind` column on startup.
+
+**UIDs.** Duel players aren't in a CSV, so `/register uid:` stores a player's Aniimo UID for the room card.
+

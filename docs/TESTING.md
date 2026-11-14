@@ -16,6 +16,7 @@ your phone, emoji uploads, and rate limits.
 | [5. Test 3: timers and admin tools](#5-test-3-timers-and-admin-tools) | No-show, dispute, undo, DQ, swap | 20 min |
 | [6. Test 4: restart](#6-test-4-restart-in-the-middle-of-a-draft) | Nothing is lost when the bot stops | 5 min |
 | [7. Test 5: big bracket](#7-test-5-a-big-bracket) | Many threads at once, rate limits | 10 min |
+| [8. Test 6: friendly duels](#8-test-6-friendly-duels) | `/duel`, New draft, End duel | 15 min |
 
 **Short on time?** Do parts 1 to 3 (about 60 minutes). That already covers the whole tournament flow.
 
@@ -49,7 +50,7 @@ your phone, emoji uploads, and rate limits.
    https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=395137502272
    ```
 
-4. In the server create these channels: `#admin`, `#announce`, `#matches` and `#live-draft`. Create a role
+4. In the server create these channels: `#admin`, `#announce`, `#matches`, `#live-draft` and `#friendly`. Create a role
    named `Tournament Admin` and give it to yourself. (The server owner and anyone with the *Administrator*
    permission count as admins automatically.)
 5. Give the `Tournament Admin` role the **Manage Threads** permission in `#matches`, or you won't see the private
@@ -63,7 +64,7 @@ your phone, emoji uploads, and rate limits.
    | Role | Server Settings → **Roles** → right-click the role → **Copy Role ID** |
    | A person | Right-click their name → **Copy User ID** |
 
-7. Copy these 6 IDs into a note: the server, the 4 channels and the `Tournament Admin` role.
+7. Copy these 7 IDs into a note: the server, the 5 channels and the `Tournament Admin` role.
 
 ### B. Your PC
 
@@ -160,6 +161,7 @@ channels:
   announce: 0            # <-- #announce
   matches: 0             # <-- #matches
   live_draft: 0          # <-- #live-draft
+  friendly: 0            # <-- #friendly
 
 dev_mode: true           # test mode: made-up players allowed, you click buttons for them
 upload_emojis: true
@@ -173,6 +175,8 @@ timers:                  # short timers so tests are quick
   auto_confirm_minutes: 1
   rematch_offer_seconds: 60
   thread_archive_minutes: 2
+  challenge_minutes: 2        # friendly duels
+  friendly_idle_minutes: 3
 ```
 
 **B6. Check everything.**
@@ -197,6 +201,7 @@ timers:                  # short timers so tests are quick
 ✓ Fonts in ...
 ✓ Draft order: 12 steps
   Dev mode: ON (test players allowed, admins can act for them)
+  Friendly duels: on (/duel in channel 123456789012345678)
 All good. Start the bot with: aniimo-pvp run
 ```
 
@@ -249,7 +254,7 @@ next to each name.
 ✅ **Expect** lines like these (each starts with a date and time). The emoji line appears about a minute later:
 
 ```
-INFO    aniimo_pvp.bot.client: Synced 6 slash commands to guild 123456789012345678
+INFO    aniimo_pvp.bot.client: Synced 9 slash commands to guild 123456789012345678
 INFO    aniimo_pvp.bot.client: Logged in as YourBotName (111111111111111111). Dev mode: True
 INFO    aniimo_pvp.bot.emojis: Emoji sync: 129 uploaded, 0 unchanged, 0 failed
 ```
@@ -651,6 +656,110 @@ Option `mode`: `same_teams`.
 
 ---
 
+## 8. Test 6: friendly duels
+
+A friendly duel is a 1v1 draft outside any tournament, started by anyone in `#friendly`. Nothing is recorded.
+You can run this while a tournament is open; they don't affect each other.
+
+### 8.1 Alone (dev mode)
+
+1. **Do:** in `#friendly`, run:
+
+   ```
+   /duel-test
+   ```
+
+   ✅ **Expect:** a card titled "⚔️ Friendly duel challenge" with **Accept**, **Decline** and **Cancel**,
+   and an *Expires* time about 2 minutes away. *Test Friend* is shown in bold instead of a ping.
+
+2. **Do:** click **Accept**. In dev mode you answer for Test Friend.
+
+   ✅ **Expect:**
+   - "Duel on! Your room is open:" with a link (only you can see this).
+   - The card changes to "⚔️ Friendly duel · in progress" and its buttons disappear.
+   - A new thread **inside `#friendly`** named "Friendly · YOUR NAME vs Test Friend", with a room card and a
+     **Ready** panel. There's an **🏁 End duel** button instead of **Call admin**.
+
+3. **Do:** click **Ready** twice, take a side, and draft as in [3.4](#34-play-match-1-open-its-thread).
+
+   ✅ **Expect:** the same picker and board as a tournament. The board header says
+   "Friendly duel · Draft 1" and shows "vs" instead of a series score.
+
+4. ✅ **Expect** after the last pick: the final board stays in the thread, and a panel
+   "Draft 1 complete · play it in Aniimo" with **🔄 New draft** and **🏁 End duel**. There is no **Report result**.
+
+5. **Do:** click **New draft**.
+
+   ✅ **Expect:** "Draft 2 started. … chooses the side this time." The player who **didn't** choose last time
+   chooses now. Draft 1's board is still in the thread above.
+
+6. **Do:** click **End duel**, then **Yes, end the duel**.
+
+   ✅ **Expect:**
+   - "Duel ended after 1 draft." (the unfinished draft 2 doesn't count).
+   - In the thread: "YOUR NAME ended the duel after 1 draft. GG!" and the panel turns into "Duel over".
+   - The card in `#friendly` says "🏁 Duel over · 1 draft played."
+   - Nothing new in `#announce` or `#live-draft`.
+
+7. **Do:** run `/duel-test` again and click **Decline**.
+
+   ✅ **Expect:** the card says "✖️ Test Friend declined the duel."
+
+8. **Do:** run `/duel-test` once more and wait 2 minutes without clicking.
+
+   ✅ **Expect:** the card says "⌛ The challenge expired. Test Friend didn't answer in time."
+
+### 8.2 With the second account
+
+1. **Do (second account):** run this anywhere:
+
+   ```
+   /register
+   ```
+
+   Option `uid`: type `1002`.
+   ✅ **Expect:** "Saved. Your Aniimo UID `1002` now shows in your duel rooms."
+
+2. **Do (you):** in `#friendly`, run:
+
+   ```
+   /duel
+   ```
+
+   Option `opponent`: pick the second account. Leave `fearless` empty.
+   ✅ **Expect:** the second account is pinged by the challenge card.
+
+3. **Do (you):** click **Accept** on your own challenge.
+
+   ✅ **Expect:** "⚠️ Only the challenged player can accept".
+
+4. **Do (second account):** click **Accept**.
+
+   ✅ **Expect:** a private thread in `#friendly` that only the two of you can see. The room card shows `1002`
+   for the second account and "Aniimo UID not set yet" for you (unless you used `/register`).
+
+5. **Do:** in the thread, mention a third member (type `@` and their name) and send it.
+
+   ✅ **Expect:** they can now see the thread and watch. If they click **Ready**: "⚠️ You're not a player in this match".
+
+6. **Do:** play one draft, then leave it alone for 3 minutes.
+
+   ✅ **Expect:** "🏁 The duel closed after 1 draft: nobody started a new draft for a while."
+
+7. **Do:** run `/duel` in `#admin`.
+
+   ✅ **Expect:** "⚠️ Duels start in #friendly. Use `/duel` there."
+
+8. **Do:**
+
+   ```
+   /profile
+   ```
+
+   ✅ **Expect:** a *Friendly drafts* line. Your rating and record didn't change.
+
+---
+
 ## What only your server can confirm
 
 Tick each one as you go. These are the parts the automated tests cannot check.
@@ -669,6 +778,8 @@ Tick each one as you go. These are the parts the automated tests cannot check.
   - If not: tell me which screen is awkward.
 - [ ] 16 or more threads open without rate-limit errors (Test 5).
   - If not: tell me and I will slow the creation down.
+- [ ] Duel rooms open as private threads in `#friendly`, and a mentioned friend can watch (Test 6).
+  - If not: give the bot **Create Private Threads** and **Send Messages in Threads** in `#friendly`.
 
 ## Troubleshooting
 
@@ -681,6 +792,8 @@ Details of every error are in `logs/bot.log` (in the project folder).
 | Nothing happens when I paste the CSV | Message Content Intent is off, or you aren't an admin, or the tournament is already past the player step |
 | "Only tournament admins can do that" | You need the `Tournament Admin` role (or the Administrator permission) |
 | "… is still running. Finish or /tournament cancel it first" | Only one tournament runs at a time: finish it or run `/tournament cancel` |
+| "Friendly duels aren't set up on this server yet" | Put the `#friendly` channel ID in `channels.friendly` and restart the bot |
+| "You already have an open duel" | End it with **🏁 End duel** in its thread, or **Cancel** your open challenge |
 | No Aniimo pictures | Run `fetch-assets` (below), then `/roster reload` |
 | A button says "This interaction failed" | Send me the last 30 lines of `logs/bot.log` |
 

@@ -52,6 +52,12 @@ def test_cli_check_and_preview(tmp_path, monkeypatch, capsys):
     (tmp_path / ".env").write_text("DISCORD_TOKEN=abc\n")
     monkeypatch.setenv("DISCORD_TOKEN", "abc")
     assert main(["check"]) == 0
+    assert "Friendly duels: off (channels.friendly is 0)" in capsys.readouterr().out
+    (tmp_path / "config.yaml").write_text(
+        "guild_id: 1\nadmin_role_id: 2\nchannels: {admin: 3, announce: 4, matches: 5, friendly: 6}\n"
+    )
+    assert main(["check"]) == 0
+    assert "Friendly duels: on (/duel in channel 6)" in capsys.readouterr().out
     assert main(["preview", "--out", str(tmp_path / "pv")]) == 0
     assert {p.name for p in (tmp_path / "pv").iterdir()} == {"board_mid_draft.png", "board_complete.png", "bracket.png"}
 

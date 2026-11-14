@@ -114,6 +114,10 @@ def cmd_check(args) -> int:
     print(("✓" if (fonts / "Inter-Regular.otf").exists() else "!") + f" Fonts in {fonts}")
     print(f"✓ Draft order: {len(settings.draft_order)} steps" if settings.draft_order else "")
     print(f"  Dev mode: {'ON (test players allowed, admins can act for them)' if settings.dev_mode else 'off'}")
+    duels = settings.channels.friendly
+    print(
+        f"  Friendly duels: {'on (/duel in channel ' + str(duels) + ')' if duels else 'off (channels.friendly is 0)'}"
+    )
     print("All good. Start the bot with: aniimo-pvp run" if ok else "Fix the items marked ✗ and run check again.")
     return 0 if ok else 1
 

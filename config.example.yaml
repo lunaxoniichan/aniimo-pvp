@@ -9,6 +9,7 @@ channels:
   announce: 0          # bracket images, round tables, champion
   matches: 0           # the bot creates one private thread per match here
   live_draft: 0        # optional (0 = off): live draft boards for spectators
+  friendly: 0          # optional (0 = off): anyone can /duel a friend here; duel rooms open as threads here
 
 timers:
   draft_step_seconds: 45        # time per ban/pick; timeout = ban skipped / random pick
@@ -19,6 +20,8 @@ timers:
   auto_confirm_minutes: 10      # a reported result is accepted if nobody disputes
   rematch_offer_seconds: 120
   thread_archive_minutes: 10    # after a match ends
+  challenge_minutes: 10         # friendly duels: a /duel challenge expires if not accepted
+  friendly_idle_minutes: 30     # friendly duels: the duel ends if nobody starts a new draft
 
 # Test mode: allows players who aren't server members (any numeric ID in the CSV),
 # and lets admins click buttons on their behalf. Turn OFF for real tournaments.

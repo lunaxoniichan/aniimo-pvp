@@ -9,6 +9,7 @@ flowchart LR
   P2 --> P3["P3 · Match panel"] --> P4["P4 · Draft"] --> P5["P5 · Results"]
   P5 --> P6["P6 · Admin tools"] --> P8["P8 · Polish + release"]
   P5 --> P7["P7 · Extras"] --> P8
+  P8 --> P9["P9 · Friendly duels"]
   P5 -. "MVP: a real tournament can run" .-> MVP(["🏁 MVP"])
 ```
 
@@ -21,7 +22,7 @@ timers, so one person with two accounts can test a whole tournament.
 
 ## Status (handover)
 
-All phases P1–P8 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified without Discord:
+All phases P1–P9 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified without Discord:
 
 | Area | How it was verified |
 |---|---|
@@ -32,6 +33,7 @@ All phases P1–P8 are implemented on branch `ccr-d33f10a4-hir0z0`. Verified wit
 | Discord layer | Whole tournaments driven through the real notifier and button handlers with fake Discord objects; every slash command payload validated offline |
 | Packaging | Fresh clone → install → `init` → `check` → `preview` → test suite |
 | Assets | `fetch-assets` run against the live official wiki: 120 Aniimo, 120 thumbnails, 9 element icons; offline tests cover parsing, host restrictions, image validation and roster safety |
+| Friendly duels (P9) | Flow tests (challenge/accept/decline/cancel/expiry, new draft side rotation, end, idle and no-show close, Fearless, no ratings or stats, DB upgrade) and fake-Discord tests of `/duel`, the challenge card, the room and every button |
 
 Still needs the live server (your token and IDs): run P0, then follow the step-by-step
 [testing guide](TESTING.md) on a test server. Dev mode lets one admin play every side of a match.
@@ -153,3 +155,20 @@ Still needs the live server (your token and IDs): run P0, then follow the step-b
 - Kill the bot mid-draft, mid-confirm and mid-no-show → after restart all three resume correctly
 - 32-player dev tournament: all Round 1 threads created with no rate-limit errors
 - CI green on the branch
+
+## P9 · Friendly duels
+
+Design: [SYSTEM_DESIGN.md §11](SYSTEM_DESIGN.md#11-friendly-duels).
+
+- [x] 9.1 `tournaments.kind` (`tournament` | `friendly`) with an in-place upgrade for older databases; tournament lookups ignore duels
+- [x] 9.2 `FriendlyService`: challenge (one open duel per player) · accept · decline · cancel · expiry job · New draft (side chooser alternates) · End duel · idle and no-show close
+- [x] 9.3 Result, rematch and admin result actions refused in duels; `finished` drafts count for Fearless, never for stats or ratings
+- [x] 9.4 `/duel` (only in `channels.friendly`) · `/register uid:` · `/duel-test` (dev mode only)
+- [x] 9.5 Challenge card with Accept / Decline / Cancel, edited as the duel moves on
+- [x] 9.6 Duel room: private, invitable thread in `#friendly`; End duel instead of Call admin; New draft / End duel after each draft; finished boards kept; board header "Friendly duel · Draft N"
+- [x] 9.7 No announcements, round table, live feed, live status or admin alerts for duels
+
+**Validate**
+- `pytest tests/test_flow_friendly.py tests/test_discord_friendly.py`
+- Manual: [testing guide, Test 6](TESTING.md#8-test-6-friendly-duels)
+

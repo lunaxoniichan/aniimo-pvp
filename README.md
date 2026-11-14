@@ -10,6 +10,8 @@ the bracket and posts a draft-board image with the Aniimo thumbnails after every
 - **Match rooms**: a private thread per match with the players' Aniimo UIDs, a ready check,
   a coin flip, Report / Confirm / Dispute, Rematch, and Next game (Bo3/Bo5).
 - **Admin tools**: undo, pause, set result, award, replay, disqualify, swap and extend.
+- **Friendly duels**: anyone can `/duel` a friend in `#friendly` for a 1v1 draft with no results or
+  ratings, and start a new draft as often as they like.
 - **Real thumbnails and element signs** downloaded from the official wiki with one command.
 - **Extras**: a live draft feed, pick/ban stats, an optional Fearless mode, and a rating leaderboard.
 
@@ -103,6 +105,8 @@ public address. Keep the PC running during the tournament.
    - `#announce`: brackets and results.
    - `#matches`: the bot creates the private match threads here.
    - `#live-draft` (optional): live boards for spectators.
+   - `#friendly` (optional): where anyone can start a [friendly duel](#friendly-duels). The bot
+     opens the duel rooms as private threads here.
 5. Turn on **Developer Mode** (Discord Settings → Advanced). Right-click the server, each channel
    and the role → **Copy ID**, and paste the IDs into `config.yaml`.
 
@@ -113,7 +117,8 @@ public address. Keep the PC running during the tournament.
 | Setting | Meaning |
 |---|---|
 | `guild_id`, `admin_role_id`, `channels.*` | IDs from step 5 above. |
-| `timers.*` | Draft step (45 s), side choice (2 min), no-show reminder/escalation (10/15 min), auto-confirm (10 min), rematch offer, thread archive. |
+| `timers.*` | Draft step (45 s), side choice (2 min), no-show reminder/escalation (10/15 min), auto-confirm (10 min), rematch offer, thread archive. Friendly duels: challenge expiry (10 min) and idle close (30 min). |
+| `channels.friendly` | Optional. The channel where `/duel` works. `0` turns friendly duels off. |
 | `dev_mode` | Test mode (see [Test it alone](#test-it-alone-dev-mode)). **Off for real events.** |
 | `upload_emojis` | Upload thumbnails as the bot's own emojis so menus show icons (up to 2000, no server boost needed). |
 | `draft_order` | Optional custom order. The default is the agreed two-phase split. |
@@ -227,6 +232,30 @@ Run these inside a match thread, or pass `match:<id>`.
 
 `/profile`, `/leaderboard` and `/stats aniimo` work for everyone.
 
+## Friendly duels
+
+A quick 1v1 draft with a friend, outside any tournament. It's always 2 players, one draft at a
+time, and **nothing is recorded**: no results, ratings, stats or announcements.
+
+1. In `#friendly`, run `/duel` and pick your friend. Option `fearless`: set it to True and you can't
+   re-pick an Aniimo you played in an earlier draft of the same duel.
+2. Your friend gets a challenge card with **Accept** / **Decline**. You can **Cancel** it. It expires
+   after 10 minutes.
+3. Accepting opens a private room thread in `#friendly`. It works like a match room: **Ready**, coin
+   flip, side choice, then the draft with the same picker and board.
+4. After the draft, play it in Aniimo. Then click **🔄 New draft** to go again (the other player
+   chooses the side this time) or **🏁 End duel**. Each finished board stays in the room.
+
+Good to know:
+
+- You can have one open duel at a time.
+- `/register uid:` saves your Aniimo UID so it shows on your duel room card. Tournaments still use
+  the UID from the admin's player list.
+- Mention a friend in the room to let them watch. Only the two players can click the buttons.
+- A duel closes by itself if you're not both ready within 15 minutes, or nobody starts a new draft
+  for 30 minutes. The thread is archived a few minutes after the duel ends.
+- With dev mode on, `/duel-test` starts a duel against a test player, and you click for both sides.
+
 ## Test it alone (dev mode)
 
 The full walkthrough, with what you should see at each step, is in the [testing guide](docs/TESTING.md).
@@ -276,6 +305,8 @@ You can mix in real accounts (for example a second Discord account) to check pin
 | Pasting the CSV does nothing | Turn on Message Content Intent; paste in `#admin` as someone with the admin role. |
 | "Couldn't create a private thread" | Give the bot Create Private Threads + Send Messages in Threads in `#matches`. |
 | Admins can't see match threads | Give the admin role Manage Threads in `#matches`. |
+| `/duel` says friendly duels aren't set up | Put the `#friendly` channel ID in `channels.friendly` and restart the bot. |
+| `/duel` says "Duels start in #friendly" | Run it in that channel, not in a thread or another channel. |
 | No thumbnails, or `fetch-assets` fails | Check your internet connection and run `fetch-assets` again. If the wiki's page layout changed, it says so and the bot keeps using coloured badges. |
 | Menus show plain emojis instead of Aniimo icons | The emoji upload is still running or failed; see `/roster info` and the log. |
 

@@ -395,7 +395,7 @@ def duel_card(
             TournamentButton("duel_decline", t.id, label="Decline", style=B.danger, emoji="✖️"),
             TournamentButton("duel_cancel", t.id, label="Cancel", emoji="↩️"),
         )
-        return f"{who(p2)} {who(p1)} challenges you to a friendly draft duel!", e, view
+        return f"{who(p2)}, {who(p1)} challenges you to a friendly draft duel!", e, view
     if t.status == "running" and outcome is None:
         e.title = "⚔️ Friendly duel · in progress"
         room = f"<#{v.match.thread_id}>" if v.match.thread_id else "opening…"
